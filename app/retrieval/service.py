@@ -26,7 +26,7 @@ from sqlalchemy import bindparam, text
 
 from app.core.logger import get_logger
 from app.ingest.embedder import Embedder, get_embedder
-from app.retrieval import hybrid
+from app.retrieval import hybrid, refs
 from app.retrieval.hybrid import Hit, RetrievalResult
 from app.retrieval.rerank import Reranker, get_reranker
 from config import Settings, get_settings
@@ -398,6 +398,20 @@ def retrieve_multi(
         if len(ordered_keys) >= final_topk:
             break
     hits = [best_hit[k] for k in ordered_keys[:final_topk]]
+
+    # 法条互引扩展：多跳才做。沿头部命中的显式引用补入被引条，插在来源条之后，
+    # 尾部低名次条被挤出 topK。只扩展前 N 条、最多补 M 条，避免引入噪声。
+    refs_added = 0
+    if getattr(s, "retrieval_ref_expansion", False) and hits:
+        hits, refs_added = refs.expand_hits_with_refs(
+            hits,
+            topk=final_topk,
+            kb_ids=kb_ids,
+            max_sources=getattr(s, "retrieval_ref_max_sources", 3),
+            max_added=getattr(s, "retrieval_ref_max_added", 3),
+            settings=s,
+        )
+
     elapsed = int((time.perf_counter() - started) * 1000)
     logger.info(
         "多子查询检索完成：查询 %d 路 × topK=%d → 交错融合 %d 条法条 → 截断 %d 条"
@@ -419,5 +433,7 @@ def retrieve_multi(
             "failed_subqueries": len(errors),
             "merge": "interleave",
             "retrieval_mode": mode,
+            "ref_expansion": bool(getattr(s, "retrieval_ref_expansion", False)),
+            "refs_added": refs_added,
         },
     )

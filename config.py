@@ -311,6 +311,11 @@ class Settings(BaseSettings):
     # 约 0.03，0.40 取两者中点偏保守；0 = 关闭回退。
     # 仅作用于 auto 选路，显式 mode=dense 的消融对照不受影响。
     retrieval_dense_rescue_score: float = Field(default=0.40, ge=0.0, le=1.0)
+    # 法条互引扩展（task 2）：多跳检索沿"依照本法第X条"等显式边补检被引条。
+    # 只扩展头部 max_sources 条命中、最多补 max_added 条，已命中条不重复。
+    retrieval_ref_expansion: bool = Field(default=True)
+    retrieval_ref_max_sources: int = Field(default=3, ge=1, le=10)
+    retrieval_ref_max_added: int = Field(default=3, ge=1, le=10)
     qa_similarity_threshold: float = Field(default=0.90, ge=0.0, le=1.0)
     qa_bm25_topn: int = Field(default=3, ge=1, le=20)
     cache_qa_ttl: int = Field(default=604800, ge=60)

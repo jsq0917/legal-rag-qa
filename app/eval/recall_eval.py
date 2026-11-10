@@ -62,12 +62,19 @@ GROUPS: dict[str, dict[str, Any]] = {
     # L 组的单查询直检从此只是"单跳链路"的对照，不再代表线上行为。
     "P6": {"pipeline": True, "mode": "hybrid", "use_rerank": True, "expand_parent": True,
            "ranker": "rrf", "law_filter": True, "sparse_ratio": None, "mode_routing": False,
+           "ref_expansion": False,
            "label": "生产链路：意图 decompose 子查询并行分检 + 法条合并（等权 RRF + 法域过滤）"},
     "P6R": {"pipeline": True, "mode": "auto", "use_rerank": True, "expand_parent": True,
             "ranker": "rrf", "law_filter": True, "sparse_ratio": None, "mode_routing": True,
+            "ref_expansion": False,
             "label": "P6 + 检索选路分流（单跳 dense / 多跳跨法 hybrid + 低置信回退）"},
+    "P6E": {"pipeline": True, "mode": "auto", "use_rerank": True, "expand_parent": True,
+            "ranker": "rrf", "law_filter": True, "sparse_ratio": None, "mode_routing": True,
+            "ref_expansion": True,
+            "label": "P6R + 法条互引扩展（多跳沿显式引用补检被引条）"},
     "P8": {"pipeline": True, "mode": "hybrid", "use_rerank": True, "expand_parent": True,
            "ranker": "rrf", "law_filter": True, "sparse_ratio": 0.5, "mode_routing": False,
+           "ref_expansion": False,
            "label": "生产链路 + 稀疏候选减半（稠密不被挤占，消融稀疏名额假设）"},
 }
 
@@ -180,6 +187,7 @@ def run_group(
             "retrieval_law_filter": bool(cfg["law_filter"]),
             "retrieval_sparse_pool_ratio": cfg.get("sparse_ratio") or base.retrieval_sparse_pool_ratio,
             "retrieval_mode_routing": bool(cfg.get("mode_routing", False)),
+            "retrieval_ref_expansion": bool(cfg.get("ref_expansion", False)),
         }
     )
     rows: list[dict[str, Any]] = []
@@ -261,6 +269,7 @@ def run_group(
             "context_chars": sum(len(h.parent_content or h.content) for h in hits),
             "mode": result.mode,
             "mode_rescued": bool(result.debug.get("mode_rescued", False)),
+            "refs_added": int(result.debug.get("refs_added", 0)),
         }
         rows.append(row)
         print(
@@ -290,6 +299,7 @@ def run_group(
             for mode in sorted({r["mode"] for r in rows})
         },
         "mode_rescues": sum(1 for r in rows if r["mode_rescued"]),
+        "refs_added": sum(r["refs_added"] for r in rows),
         "by_type": {},
         "rows": rows,
     }
