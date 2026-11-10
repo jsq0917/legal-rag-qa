@@ -21,7 +21,7 @@ from app.domain_profiles import (
 )
 from app.generation.context import build_context_sources
 from app.generation.prompts import ContextSource, build_messages
-from app.ingest.pipeline import prepare
+from app.ingest.pipeline import _clip_title, prepare
 from app.orchestration.models import IntentResult
 from app.orchestration.router import route as decide_route
 from config import Settings
@@ -79,6 +79,26 @@ def test_generic_ingest_uses_sections_and_no_fake_article_numbers():
     sections = {c.chapter_path for c in prepared.chunks if c.chunk_type == "parent"}
     assert "滤芯更换" in sections
     assert "安全警告" in sections
+    # 来源名取文档 H1，不能退化成文件名 slug
+    assert prepared.doc.law_name.startswith("Nova 便携空气净化器")
+    assert all("nova·" not in c.title for c in prepared.chunks)
+
+
+def test_generic_doc_does_not_parse_article_numbers(tmp_path):
+    doc = tmp_path / "manual.md"
+    doc.write_text(
+        "# 售后条款\n\n## 保修范围\n\n第一条 本产品保修一年。\n\n## 免责\n\n人为损坏不在保修范围内。\n",
+        encoding="utf-8",
+    )
+    prepared = prepare(doc, profile="generic")
+    assert prepared.doc.articles == []
+    assert all(c.article_no == "" for c in prepared.chunks)
+    assert {c.chapter_path for c in prepared.chunks} >= {"保修范围", "免责"}
+
+
+def test_generic_title_is_clipped_for_milvus_limit():
+    clipped = _clip_title("产" * 70)
+    assert len(clipped) == 64 and clipped.endswith("…")
 
 
 def test_legal_ingest_keeps_article_labels():

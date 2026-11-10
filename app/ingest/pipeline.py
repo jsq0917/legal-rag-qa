@@ -20,6 +20,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import os
+import re
 import sys
 import time
 from dataclasses import dataclass
@@ -119,6 +120,11 @@ class IngestResult:
     message: str = ""
 
 
+def _clip_title(value: str, limit: int = 64) -> str:
+    """Milvus 的 law_name 字段上限 64 字符，超长标题截断并保留省略号。"""
+    return value if len(value) <= limit else value[: limit - 1] + "…"
+
+
 def sha1_text(text: str) -> str:
     return hashlib.sha1(text.encode("utf-8")).hexdigest()
 
@@ -155,18 +161,31 @@ def prepare(
     raw_lines = loaded.text.splitlines()
     lines = clean_lines(raw_lines)
     resolved_law = law_name or law_name_from_filename(file_path.name)
-    doc = parse_law(file_path.name, resolved_law, lines)
-
-    if not doc.articles:
-        # 非法律文书（PPT/通用文档）：用归一化后的全文做退化分块
-        from app.ingest.models import ParsedDocument as PD
-
-        doc = PD(
+    if profile == "generic":
+        # 产品手册/FAQ 没有“法名”，用文档 H1 作为来源标题，避免把文件名当作品名
+        for line in raw_lines:
+            heading = re.match(r"^#\s+(.+)$", line.strip())
+            if heading:
+                resolved_law = _clip_title(heading.group(1).strip())
+                break
+    if profile == "generic":
+        # 产品手册/FAQ 不按法条解析：即使正文出现“第一条”，也走标题分节
+        doc = ParsedDocument(
             source_file=file_path.name,
             law_name=resolved_law,
             text=normalize_text(loaded.text),
             articles=[],
         )
+    else:
+        doc = parse_law(file_path.name, resolved_law, lines)
+        if not doc.articles:
+            # 非法律文书（PPT/通用文档）：用归一化后的全文做退化分块
+            doc = ParsedDocument(
+                source_file=file_path.name,
+                law_name=resolved_law,
+                text=normalize_text(loaded.text),
+                articles=[],
+            )
 
     chunks = build_chunks(
         doc,

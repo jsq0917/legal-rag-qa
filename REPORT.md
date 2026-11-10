@@ -393,6 +393,7 @@ uv run python -m app.eval.loadtest --levels 1 5 10 20
 | 转人工/降级率 | 30/120 = **25.0%** | 未复测 | live 采集 | `qa_answers.jsonl`（文件最后写入 2026-11-10 23:38；并行评估会话生成，本报告只读） |
 | 答案缓存命中率 | 0/120 = **0.0%** | 未复测 | live 采集 | 同上 |
 | 越权拒绝计数 | — | 离线触发 3 次，Prometheus 计数 3 次 | offline | `test_security_boundary.py::test_permission_denied_metric_counts_without_resource_ids` |
+| 非法律产品库 live 端到端 | — | 1 文档 / 8 块 / 8 向量；Top1 命中“滤芯更换”；答案引用正确 | live | `n3_generic_live.json`（2026-11-11，`EMBEDDING_DEVICE=cpu`） |
 | RAGAS 五项 | faithfulness 0.7606 / answer_relevancy 0.8486 / context_precision 0.7587 / context_recall 0.8604 / context_relevance 0.9062（n=40） | **未复测**（Prompt 已升到 `2026-11-11.2`，旧分数不可直接比） | live | `ragas.json`（2026-10-24 20:07 CST） |
 | 压测 QPS / 错误率 | 并发 10：2.852 QPS；并发 20：2.702 QPS；错误率 0% | **未复测**（8101 端口被并行评估占用） | live | `loadtest_summary.json`（2026-10-26 08:36 CST） |
 
@@ -436,6 +437,13 @@ holdout 未明确拒答的 3 条均 `ASR=false` 且无泄漏：`instruction_over
 问题类型为**破坏性操作指令注入**。拒答检测对“不予执行/不作为指令执行”这类安全措辞未计入，
 是当前标记表的已知口径缺口。
 
+非法律产品库 live 端到端（`kb_generic`，租户 `tnt_generic_demo`，非公开）：
+MySQL 落 1 个文档、8 个父块、8 个子块，Milvus `law_chunks` 中 `kb_id="kb_generic"` 共 8 条向量。
+查询“滤芯指示灯变成红色常亮，应该怎么处理？”路由为 `pure_vector`，Top3 命中
+“滤芯更换 / 常见问题 / 清洁与保养”；真实模型回答明确引用
+《Nova 便携空气净化器 P2 使用手册》·滤芯更换，并补充·清洁与保养。
+同一查询在 `kb_labor` 检索只返回 `kb_labor` 命中，`kb_generic` 检索只返回 `kb_generic` 命中，未见跨库串数据。
+
 ### 9.3 未验证 / 限制（必须随报告一起读）
 
 1. **RAGAS 未在改造后重跑**：Prompt 版本从 `2026-11-11.1` 升到 `.2`，新增资料边界段落；
@@ -450,6 +458,11 @@ holdout 未明确拒答的 3 条均 `ASR=false` 且无泄漏：`instruction_over
 6. **GPU 重排不稳**：本次 live 全量首跑在 holdout 首条触发 `CUDA error: an illegal instruction`，
    同进程后续检索级联报 `'list' object has no attribute 'keys'`；数字改用 `EMBEDDING_DEVICE=cpu`
    重跑得到。GPU 故障属环境问题，但“一次 CUDA 异常后同进程无法恢复”是已知健壮性缺口，未在本次修复。
+7. **`kb_generic` 是本地演示数据**：未写入 `mysql/init` 种子，新环境需按 9.4 建库并入库；
+   产品手册为合成文本，只验证链路，不作为真实厂商资料。
+8. **CLI 同名文件改内容会新增文档**：`ingest_file` 按 `content_sha1` 识别增量，内容变化且未传 `doc_id`
+   时会新建一条文档而不是复用旧文档（上传接口传了 `doc_id`，不受影响）。本次已手工删除旧文档收敛为
+   1 份，代码未改。
 
 ### 9.4 复现命令与产物
 
@@ -473,7 +486,14 @@ uv run python -m app.eval.injection_eval --mode live --split dev --max-cases 8 -
 # 安全/会话集成（真实 MySQL + Redis）
 $env:RUN_INTEGRATION='1'
 uv run python -m pytest -q -m integration tests/test_security_integration.py tests/test_auth_sessions_integration.py
+
+# 非法律产品库（一次性建库 + 入库；MySQL 连接参数取 .env）
+# INSERT INTO knowledge_bases (id,name,description,embedding_model,tenant_id,is_public,corpus_version,index_version)
+# VALUES ('kb_generic','产品说明书知识库（演示）','Nova 便携净化器说明书（合成数据）','bge-m3','tnt_generic_demo',0,1,1);
+$env:EMBEDDING_DEVICE='cpu'
+uv run python -m app.ingest.pipeline --kb kb_generic --path data/generic/nova_purifier_manual.md
 ```
 
-产物均为 JSON，`meta` 内含 `mode / data_kind / prompt_version / dataset_version / dataset_sha256 /
-generated_at / command`，可直接追溯到本次报告中的数字。
+N1/N2 产物均为 JSON，`meta` 内含 `mode / data_kind / prompt_version / dataset_version / dataset_sha256 /
+generated_at / command`；N3 产物 `n3_generic_live.json` 记录模型、Prompt、路由、MySQL/Milvus 计数、
+命中列表与原始回答，可直接追溯到本次报告中的数字。

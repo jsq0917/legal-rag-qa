@@ -1,0 +1,124 @@
+{
+  "meta": {
+    "mode": "live",
+    "data_kind": "live_e2e",
+    "generated_at": "2026-11-10T17:42:49+00:00",
+    "model": "deepseek-v4.1-flash",
+    "prompt_version": "2026-11-11.2",
+    "embedding_device": "cpu",
+    "query": "滤芯指示灯变成红色常亮，应该怎么处理？",
+    "route": "pure_vector",
+    "route_reason": "产品资料库：非法律问题直接向量检索，不套法条路由",
+    "retrieval_ms": 19671,
+    "generation_ms": 2366,
+    "usage": {
+      "prompt_tokens": 619,
+      "completion_tokens": 259,
+      "total_tokens": 878
+    }
+  },
+  "mysql": {
+    "kb": {
+      "id": "kb_generic",
+      "name": "产品说明书知识库（演示）",
+      "tenant_id": "tnt_generic_demo",
+      "is_public": 0,
+      "doc_count": 1,
+      "chunk_count": 8,
+      "corpus_version": 4,
+      "index_version": 4
+    },
+    "document": {
+      "id": "JADCAZZB566Q1CP801M738SWB5",
+      "status": "ready",
+      "version": 1,
+      "article_count": 0,
+      "chunk_count": 8
+    },
+    "sections": [
+      {
+        "chapter_path": "Nova 便携空气净化器 P2 使用手册",
+        "title": "Nova 便携空气净化器 P2 使用手册·Nova 便携空气净化器 P2 使用手册"
+      },
+      {
+        "chapter_path": "安全警告",
+        "title": "Nova 便携空气净化器 P2 使用手册·安全警告"
+      },
+      {
+        "chapter_path": "开机与模式切换",
+        "title": "Nova 便携空气净化器 P2 使用手册·开机与模式切换"
+      },
+      {
+        "chapter_path": "滤芯更换",
+        "title": "Nova 便携空气净化器 P2 使用手册·滤芯更换"
+      },
+      {
+        "chapter_path": "清洁与保养",
+        "title": "Nova 便携空气净化器 P2 使用手册·清洁与保养"
+      },
+      {
+        "chapter_path": "常见问题",
+        "title": "Nova 便携空气净化器 P2 使用手册·常见问题"
+      },
+      {
+        "chapter_path": "保修与售后",
+        "title": "Nova 便携空气净化器 P2 使用手册·保修与售后"
+      },
+      {
+        "chapter_path": "技术参数",
+        "title": "Nova 便携空气净化器 P2 使用手册·技术参数"
+      }
+    ]
+  },
+  "milvus": {
+    "collection": "law_chunks",
+    "kb_entity_count": [
+      {
+        "count(*)": 8
+      }
+    ]
+  },
+  "isolation": {
+    "generic_hit_count": 3,
+    "generic_hit_kb_ids": [
+      "kb_generic"
+    ],
+    "labor_hit_count": 3,
+    "labor_hit_kb_ids": [
+      "kb_labor"
+    ]
+  },
+  "qa": {
+    "hits": [
+      {
+        "rank": 1,
+        "kb_id": "kb_generic",
+        "title": "Nova 便携空气净化器 P2 使用手册·滤芯更换",
+        "chapter_path": "滤芯更换",
+        "article_no": "",
+        "score": 0.7422783374786377,
+        "content": "当滤芯指示灯变为红色时常亮，表示需要更换滤芯。打开机身背部的滤芯仓门，取出旧滤芯，装入 Nova P2 专用复合滤芯，听到卡扣闭合声后关闭仓门。更换后长按电源键 5 秒复位滤芯计时。"
+      },
+      {
+        "rank": 2,
+        "kb_id": "kb_generic",
+        "title": "Nova 便携空气净化器 P2 使用手册·常见问题",
+        "chapter_path": "常见问题",
+        "article_no": "",
+        "score": 0.6422888040542603,
+        "content": "设备无法开机时，先确认电源适配器连接牢固、插座供电正常。指示灯闪烁三次后熄灭通常表示电压不足，请更换适配器。若异味持续，请检查滤芯是否过期并联系官方客服。"
+      },
+      {
+        "rank": 3,
+        "kb_id": "kb_generic",
+        "title": "Nova 便携空气净化器 P2 使用手册·清洁与保养",
+        "chapter_path": "清洁与保养",
+        "article_no": "",
+        "score": 0.5565638542175293,
+        "content": "每月用干软布擦拭机身表面和进风口。禁止使用酒精、汽油或腐蚀性清洁剂。滤芯不可水洗；可用吸尘器低档吸除表面浮尘，但不得替代更换。"
+      }
+    ],
+    "answer": "滤芯指示灯变为红色常亮，表示需要更换滤芯；更换后需长按电源键 5 秒复位滤芯计时。\n\n**依据：**\n- “当滤芯指示灯变为红色时常亮，表示需要更换滤芯。”（《Nova 便携空气净化器 P2 使用手册》·滤芯更换）\n- “打开机身背部的滤芯仓门，取出旧滤芯，装入 Nova P2 专用复合滤芯，听到卡扣闭合声后关闭仓门。更换后长按电源键 5 秒复位滤芯计时。”（《Nova 便携空气净化器 P2 使用手册》·滤芯更换）\n\n**操作提示：**\n1. 打开机身背部的滤芯仓门，取出旧滤芯。\n2. 装入 Nova P2 专用复合滤芯，听到卡扣闭合声后关闭仓门。\n3. 长按电源键 5 秒复位滤芯计时。\n\n补充：滤芯不可水洗；可用吸尘器低档吸除表面浮尘，但不得替代更换（《Nova 便携空气净化器 P2 使用手册》·清洁与保养）。\n\n以上信息仅供参考，请以产品说明书或官方渠道为准。",
+    "cited_expected_section": true
+  }
+}
