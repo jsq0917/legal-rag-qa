@@ -4,8 +4,8 @@
     "data_kind": "synthetic_fixture",
     "identity_mode": "scoped",
     "model": "deepseek-chat",
-    "prompt_version": "2026-11-11.1",
-    "generated_at": "2026-11-10T16:55:27+00:00",
+    "prompt_version": "2026-11-11.2",
+    "generated_at": "2026-11-10T17:15:40+00:00",
     "turns": 15,
     "sessions": 10,
     "dataset_version": [

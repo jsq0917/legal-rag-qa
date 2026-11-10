@@ -184,6 +184,22 @@ class TestMaliciousInput:
         assert resp.status_code != 500
 
 
+def test_permission_denied_metric_counts_without_resource_ids(client):
+    """越权计数只按资源类型聚合，不写具体 kb_id，便于报告统计。"""
+    from app.core.metrics import render_prometheus, reset_metrics
+
+    reset_metrics()
+    for _ in range(3):
+        resp = client.post(
+            "/api/retrieval/preview",
+            json={"question": "劳动合同解除", "kb_ids": [SECRET_KB]},
+        )
+        assert resp.status_code == 404
+    text = render_prometheus()
+    assert 'lawanswer_permission_denied_total{resource="retrieval_preview"} 3' in text
+    assert SECRET_KB not in text
+
+
 class TestDeletedOrMissingResources:
     @pytest.mark.parametrize(
         "method,path",

@@ -373,3 +373,71 @@ uv run python -m app.eval.loadtest --levels 1 5 10 20
 在**「问一个需要多条款拼起来的生活问题」**上还不够（多跳召回 ~0.48、忠实度 0.7075）；
 在**「并发」**上已把 CPU 时的 0.289 QPS 追到 GPU 的 1.994（并发 10）/ 2.686（并发 20），距目标 3 只差 1.1–1.5 倍，
 瓶颈不再是硬件与检索，而是每条请求固定的两次 LLM 调用——真正要改代码的是前两项。
+
+## 9. 本次改造复测（2026-11-11）
+
+> **口径**：`offline` = 离线单测，不加载模型/不连外部服务；`fixture` = 人工快照或合成语料，
+> **不代表线上模型**；`live` = 真实 LLM 调用或真实采集文件。每个数字都标注来源文件与时间；
+> 未运行的项写“未验证”，不折算成通过。
+
+### 9.1 改造前 / 后对照
+
+| 痛点 | 改造前 | 改造后 | 类型 | 来源（时间） |
+| --- | --- | --- | --- | --- |
+| 缓存跨租户/跨库误命中率 | **0.500**（2/4 探针）`legacy` 身份 | **0.000**（0/4）`scoped` 身份 | fixture | `mt_legacy.json` → `mt_scoped.json`（2026-11-11 01:15 CST） |
+| 提示注入 ASR | 12/12（模拟“无防护照做”的坏回答） | 0/12（安全快照）；**live 0/6** | fixture + live | `injection_fixture.json`（2026-11-11 01:02 CST）、`injection_live_dev.json`（01:04 CST） |
+| 注入攻击明确拒答率 | — | 5/6（第 6 条为“忽略注入后正常作答”） | live | 同上，6 条 dev 攻击样本 |
+| 正常法律问题误拒 | — | 0/4 fixture；0/2 live | fixture + live | 同上 |
+| 敏感信息泄漏 | — | 0 条（攻击回答快照 + live 回答均未检出密钥/路径/系统 Prompt） | fixture + live | 同上 |
+| 转人工/降级率 | 30/120 = **25.0%** | 未复测 | live 采集 | `qa_answers.jsonl`（文件最后写入 2026-11-10 23:38；并行评估会话生成，本报告只读） |
+| 答案缓存命中率 | 0/120 = **0.0%** | 未复测 | live 采集 | 同上 |
+| 越权拒绝计数 | — | 离线触发 3 次，Prometheus 计数 3 次 | offline | `test_security_boundary.py::test_permission_denied_metric_counts_without_resource_ids` |
+| RAGAS 五项 | faithfulness 0.7606 / answer_relevancy 0.8486 / context_precision 0.7587 / context_recall 0.8604 / context_relevance 0.9062（n=40） | **未复测**（Prompt 已升到 `2026-11-11.2`，旧分数不可直接比） | live | `ragas.json`（2026-10-24 20:07 CST） |
+| 压测 QPS / 错误率 | 并发 10：2.852 QPS；并发 20：2.702 QPS；错误率 0% | **未复测**（8101 端口被并行评估占用） | live | `loadtest_summary.json`（2026-10-26 08:36 CST） |
+
+补充：`qa_answers.jsonl` 的 120 条中有 1 条 `HTTP 429` 错误；降级 30 条按全部 120 条计为
+25.0%，剔除错误后为 30/119 = 25.2%。该文件仍在被并行会话写入，引用时以当时快照为准。
+
+### 9.2 数据集划分
+
+| 数据集 | 规模 | dev | holdout | 版本 | SHA-256（前 12 位） |
+| --- | --- | --- | --- | --- | --- |
+| 多轮/缓存 `multiturn_sessions.jsonl` | 10 会话 / 15 轮 | 11 轮 | 4 轮 | `2026-11-11.1` | `153bb7a875fd` |
+| 提示注入 `prompt_injection.jsonl` | 16 条（6 类攻击 + 正常） | 8 条 | 8 条 | `2026-11-11.1` | `da344e7818d3` |
+
+多轮 fixture 当前指标（`2026-11-11.2` Prompt）：rewrite_correct 0.933（14/15）、
+slot_inheritance 1.000、retrieval_recall 1.000（14/14）、citation_correct 1.000（14/14）、
+refusal_correct 1.000、cache_false_hit 0.500 → 0.000。唯一 rewrite 失败是
+`mt_dev_rewrite` 的“主动辞职能不能要补偿”改写措辞与期望不完全一致，属口径差异，不是检索失败。
+
+### 9.3 未验证 / 限制（必须随报告一起读）
+
+1. **RAGAS 未在改造后重跑**：Prompt 版本从 `2026-11-11.1` 升到 `.2`，新增资料边界段落；
+   旧五项分数不能作为改造后结论。
+2. **压测未复跑**：本机 8101 端口被另一评估会话占用，未做改造后 QPS/TTFT 对比，报告不给出趋势判断。
+3. **权限拒绝只有离线合成计数**：没有线上流量采集，不能把 3 次当作生产拒绝量。
+4. **live 注入只跑 dev 8 条**（6 攻击 + 2 正常），holdout 8 条没有跑真实模型；live 结果不进入 fixture 通过率。
+5. **集成层全量仍有 6 项环境性失败**：上传/生成用例分别受登录态（2 个 401）与本地种子语料/知识库选择（4 个）影响；
+   确定性安全/会话子集 6 项通过。详见 README「测试」与提交说明。
+
+### 9.4 复现命令与产物
+
+```powershell
+# 离线（CI 必跑）
+uv run python -m pytest -q
+
+# 缓存多轮（fixture，前后对比）
+uv run python -m app.eval.multiturn_eval --identity legacy --out eval/results/mt_legacy.json
+uv run python -m app.eval.multiturn_eval --identity scoped --out eval/results/mt_scoped.json --compare eval/results/mt_legacy.json
+
+# 提示注入（fixture；live 必须显式限条数）
+uv run python -m app.eval.injection_eval --out eval/results/injection_fixture.json
+uv run python -m app.eval.injection_eval --mode live --split dev --max-cases 8 --out eval/results/injection_live_dev.json
+
+# 安全/会话集成（真实 MySQL + Redis）
+$env:RUN_INTEGRATION='1'
+uv run python -m pytest -q -m integration tests/test_security_integration.py tests/test_auth_sessions_integration.py
+```
+
+产物均为 JSON，`meta` 内含 `mode / data_kind / prompt_version / dataset_version / dataset_sha256 /
+generated_at / command`，可直接追溯到本次报告中的数字。
