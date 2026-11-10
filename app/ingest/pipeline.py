@@ -38,6 +38,7 @@ from app.ingest.versioning import extract_effective_from, normalize_date
 from app.ingest.writer import (
     chunk_to_entity,
     delete_chunks,
+    delete_document_version_vectors,
     delete_document_vectors,
     finish_ingest_job,
     get_document_by_sha1,
@@ -90,6 +91,7 @@ class PreparedIngest:
     file_size: int
     file_sha1: str
     content_sha1: str
+    content_hash: str
     doc: ParsedDocument
     chunks: list[Chunk]
     parse_config: dict
@@ -119,6 +121,10 @@ class IngestResult:
 
 def sha1_text(text: str) -> str:
     return hashlib.sha1(text.encode("utf-8")).hexdigest()
+
+
+def sha256_text(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
 def sha1_file(path: Path) -> str:
@@ -165,13 +171,15 @@ def prepare(
         chunk_size=chunk_size,
         overlap=overlap,
     )
-    content_sha1 = sha1_text("\n".join(item.text for item in lines))
+    normalized_body = "\n".join(item.text for item in lines)
+    content_sha1 = sha1_text(normalized_body)
     return PreparedIngest(
         source_file=file_path.name,
         file_type=loaded.file_type,
         file_size=file_path.stat().st_size,
         file_sha1=sha1_file(file_path),
         content_sha1=content_sha1,
+        content_hash=sha256_text(normalized_body),
         doc=doc,
         chunks=chunks,
         parse_config={
@@ -227,6 +235,7 @@ def rebind_ids(
         file_size=prepared.file_size,
         file_sha1=prepared.file_sha1,
         content_sha1=prepared.content_sha1,
+        content_hash=prepared.content_hash,
         doc=prepared.doc,
         chunks=rebinded,
         parse_config=prepared.parse_config,
@@ -294,7 +303,41 @@ def ingest(
         # 上传接口会预生成 doc_id（先落一条 pending 行给前端轮询），此处沿用
         doc_id = existing["id"] if existing else (doc_id or new_id())
         rebuild = existing is not None
-        version = int(existing.get("version") or 1) + 1 if rebuild else 1
+
+        # 并发写保护：先读当前 version，再用 CAS 抢占（version 不变才 +1）。
+        # 抢占失败的旧任务直接返回 stale，绝不覆盖新任务写出的内容。
+        current = db.execute(
+            text("SELECT version FROM documents WHERE id = :id"), {"id": doc_id}
+        ).mappings().first()
+        base_version = int(current["version"]) if current else 1
+        if current is not None:
+            claimed = db.execute(
+                text(
+                    "UPDATE documents SET version = version + 1, status = 'parsing', "
+                    "progress = 10, error_msg = NULL WHERE id = :id AND version = :version"
+                ),
+                {"id": doc_id, "version": base_version},
+            )
+            if claimed.rowcount == 0:
+                logger.info("摄入任务已被更新的任务取代 doc=%s base=%s", doc_id, base_version)
+                return IngestResult(
+                    doc_id=doc_id,
+                    status="stale",
+                    article_count=0,
+                    parent_count=0,
+                    child_count=0,
+                    elapsed_ms=int((time.perf_counter() - started) * 1000),
+                    message="该文档已有更新的解析任务，本次写入已放弃",
+                )
+            version = base_version + 1
+        else:
+            version = 1
+
+        kb_row = db.execute(
+            text("SELECT index_version FROM knowledge_bases WHERE id = :id"), {"id": kb_id}
+        ).mappings().first()
+        # 本次成功后会 +1，文档记录的就是"本次写入后的索引版本"
+        index_version = int(kb_row["index_version"] if kb_row else 0) + 1
 
         # 时效：正文能读到时以正文为准；读不到则保留库里已有值（人工维护的
         # 废止日期尤其不能被重建覆盖）。effective_to 目前正文不产出，靠人工补。
@@ -325,6 +368,8 @@ def ingest(
                 "file_type": prepared.file_type,
                 "file_size": prepared.file_size,
                 "content_sha1": prepared.content_sha1,
+                "content_hash": prepared.content_hash,
+                "index_version": index_version,
                 "file_sha1": prepared.file_sha1,
                 "storage_path": naming.get("storage_path") or str(_relative_storage(prepared.source_file)),
                 "status": "parsing",
@@ -349,7 +394,11 @@ def ingest(
         errors = validate_article_sequence(bound.doc.articles)
         if errors:
             update_document_status(
-                db, doc_id, status="failed", error=f"条号缺失：{errors[:10]}"
+                db,
+                doc_id,
+                status="failed",
+                error=f"条号缺失：{errors[:10]}",
+                expected_version=version,
             )
             finish_ingest_job(db, job_id, status="failed", message="条号缺失")
             raise RuntimeError(f"{prepared.source_file} 条号缺失：{errors[:10]}")
@@ -383,20 +432,55 @@ def ingest(
                 update_document_status(db, doc_id, status="embedding", progress=progress)
             upsert_vectors(client, collection, entities)
         except Exception as exc:  # noqa: BLE001
-            update_document_status(db, doc_id, status="failed", error=str(exc))
+            update_document_status(
+                db, doc_id, status="failed", error=str(exc), expected_version=version
+            )
             finish_ingest_job(db, job_id, status="failed", message=str(exc))
             raise
 
-        update_document_status(
+        finalized = update_document_status(
             db,
             doc_id,
             status="ready",
             progress=100,
             article_count=len(bound.doc.articles),
             chunk_count=len(bound.children),
+            expected_version=version,
         )
+        if finalized == 0:
+            # 收尾前发现已被更新的任务取代：清理本版本残留，绝不把旧内容标成 ready。
+            logger.info("摄入收尾时文档版本已变化，丢弃本次结果 doc=%s v=%s", doc_id, version)
+            db.execute(
+                text(
+                    "DELETE FROM document_chunks WHERE doc_id = :doc_id AND version = :version"
+                ),
+                {"doc_id": doc_id, "version": version},
+            )
+            try:
+                delete_document_version_vectors(client, collection, doc_id, version)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("清理过期版本向量失败 doc=%s v=%s: %s", doc_id, version, exc)
+            finish_ingest_job(db, job_id, status="failed", message="已被更新的任务取代")
+            return IngestResult(
+                doc_id=doc_id,
+                status="stale",
+                article_count=0,
+                parent_count=0,
+                child_count=0,
+                elapsed_ms=int((time.perf_counter() - started) * 1000),
+                message="该文档已有更新的解析任务，本次写入已放弃",
+            )
+
         finish_ingest_job(
             db, job_id, status="success", processed=len(children), total=len(children)
+        )
+        # 语料/索引版本 +1：检索与答案缓存同时看到新版本，旧缓存不可达。
+        db.execute(
+            text(
+                "UPDATE knowledge_bases SET corpus_version = corpus_version + 1, "
+                "index_version = index_version + 1 WHERE id = :kb_id"
+            ),
+            {"kb_id": kb_id},
         )
         refresh_kb_counts(db, kb_id)
 

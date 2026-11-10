@@ -270,6 +270,20 @@ def run_group(
             "mode": result.mode,
             "mode_rescued": bool(result.debug.get("mode_rescued", False)),
             "refs_added": int(result.debug.get("refs_added", 0)),
+            # 可追溯：每条命中来自哪个知识库/文档版本，检索时已过滤掉非 ready
+            # 文档与 version 不一致的脏向量（见 retrieval.service._attach_parents）。
+            "kb_versions": result.debug.get("kb_versions", {}),
+            "hit_versions": [
+                {
+                    "law": h.law_article,
+                    "kb_id": h.kb_id,
+                    "doc_id": h.doc_id,
+                    "doc_version": h.version,
+                    "corpus_version": h.corpus_version,
+                    "index_version": h.index_version,
+                }
+                for h in hits
+            ],
         }
         rows.append(row)
         print(

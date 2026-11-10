@@ -323,8 +323,14 @@ class TestKbContract:
         assert_keys(data, {"id": str, "kb_id": str, "filename": str, "parse_config": (dict,)}, "document")
 
     def test_document_delete_and_reingest(self, client, monkeypatch):
-        monkeypatch.setattr("app.api.knowledge.delete_document_service", lambda db, doc_id: None)
-        assert client.delete(f"/api/documents/{DOC}").json() == {"deleted": DOC}
+        monkeypatch.setattr(
+            "app.api.knowledge.delete_document_service",
+            lambda db, doc_id: {"kb_id": "kb_labor", "storage_path": None},
+        )
+        assert client.delete(f"/api/documents/{DOC}").json() == {
+            "deleted": DOC,
+            "file_purged": False,
+        }
 
         monkeypatch.setattr("app.api.knowledge.run_ingest_job", lambda *a, **k: None)
 

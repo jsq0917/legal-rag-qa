@@ -317,6 +317,9 @@ class FakeDB:
         if low.startswith("select kb_id, storage_path, parse_config from documents"):
             rows = [d for d in self.docs if d["id"] == p.get("id")]
             return _Result(rows)
+        if low.startswith("select id from documents where id in"):
+            ids = set(p.get("ids") or [])
+            return _Result([{"id": d["id"]} for d in self.docs if d["id"] in ids])
 
         # ---- document_chunks ----
         if low.startswith("select count(*) from document_chunks"):

@@ -20,7 +20,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
-from sqlalchemy import text
+from sqlalchemy import bindparam, text
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_access_scope
@@ -244,6 +244,7 @@ def list_messages(
     limit: int = Query(100, ge=1, le=500),
     user: CurrentUser = Depends(get_current_user),
     db: Session = Depends(get_db),
+    scope: AccessScope = Depends(get_access_scope),
 ) -> dict:
     get_owned_session(db, session_id, user.id)
     rows = db.execute(
@@ -264,7 +265,49 @@ def list_messages(
                     data[key] = json.loads(value)
                 except json.JSONDecodeError:
                     data[key] = None
+        data["sources"] = _live_sources(db, data.get("sources"), scope)
         data["cached"] = bool(data.get("cached"))
         data["created_at"] = _iso(data.get("created_at"))
         items.append(data)
     return {"session_id": session_id, "count": len(items), "items": items}
+
+
+def _live_sources(db: Session, sources, scope: AccessScope) -> list | None:
+    """历史消息里的来源也要按"当前是否仍可见/仍存在"过滤。
+
+    文档删除后，旧消息不再展示该来源的正文快照；被移出授权范围的知识库同理。
+    """
+    if not isinstance(sources, list):
+        return None
+    doc_ids = {
+        str(s.get("doc_id"))
+        for s in sources
+        if isinstance(s, dict) and s.get("doc_id")
+    }
+    existing: set[str] = set()
+    if doc_ids:
+        try:
+            rows = db.execute(
+                text("SELECT id FROM documents WHERE id IN :ids").bindparams(
+                    bindparam("ids", expanding=True)
+                ),
+                {"ids": list(doc_ids)},
+            ).mappings().all()
+            existing = {str(r["id"]) for r in rows}
+        except Exception as exc:  # noqa: BLE001 - 历史消息读取不因过滤失败而 500
+            from app.core.logger import get_logger
+
+            get_logger(__name__).warning("历史来源过滤失败，按原样返回: %s", exc)
+            return sources
+    kept: list[dict] = []
+    for src in sources:
+        if not isinstance(src, dict):
+            continue
+        kb_id = src.get("kb_id")
+        if kb_id and scope.has_grants and not scope.allows_kb(str(kb_id)):
+            continue
+        doc_id = src.get("doc_id")
+        if doc_id and str(doc_id) not in existing:
+            continue
+        kept.append(src)
+    return kept

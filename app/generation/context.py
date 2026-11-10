@@ -41,6 +41,10 @@ class SourceRef:
     effective_from: str = ""
     effective_to: str = ""
     version: int = 0
+    kb_id: str = ""
+    doc_id: str = ""
+    corpus_version: int = 0
+    index_version: int = 0
 
     def to_dict(self) -> dict:
         return {
@@ -54,6 +58,10 @@ class SourceRef:
             "effective_from": self.effective_from,
             "effective_to": self.effective_to,
             "version": self.version,
+            "kb_id": self.kb_id,
+            "doc_id": self.doc_id,
+            "corpus_version": self.corpus_version,
+            "index_version": self.index_version,
         }
 
 
@@ -92,12 +100,21 @@ def sources_from_qa(
                 score=score,
                 snippet=_snippet(qa.answer),
                 kind="qa",
+                kb_id=qa.kb_id or "",
             )
         )
     if not out:
         # law_refs 缺失时至少给一个库级来源，前端不至于没有引用可展示
         out.append(
-            SourceRef(law="高频问答库", chapter_path="", article_no="", score=score, snippet=_snippet(qa.answer), kind="qa")
+            SourceRef(
+                law="高频问答库",
+                chapter_path="",
+                article_no="",
+                score=score,
+                snippet=_snippet(qa.answer),
+                kind="qa",
+                kb_id=qa.kb_id or "",
+            )
         )
     return out
 
@@ -119,6 +136,10 @@ def sources_from_hits(hits: Sequence | None) -> list[SourceRef]:
                 effective_from=getattr(h, "effective_from", ""),
                 effective_to=getattr(h, "effective_to", ""),
                 version=getattr(h, "version", 0),
+                kb_id=getattr(h, "kb_id", "") or "",
+                doc_id=getattr(h, "doc_id", "") or "",
+                corpus_version=getattr(h, "corpus_version", 0) or 0,
+                index_version=getattr(h, "index_version", 0) or 0,
             )
         )
     return out

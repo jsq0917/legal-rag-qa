@@ -67,6 +67,9 @@ class Hit:
     effective_from: str = ""
     effective_to: str = ""
     version: int = 0
+    #: 知识库级版本快照（检索时补全，便于 trace/评估追溯）
+    corpus_version: int = 0
+    index_version: int = 0
 
     @property
     def embed_text(self) -> str:

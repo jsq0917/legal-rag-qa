@@ -259,8 +259,11 @@ def retrieve(
             )
 
     hits = hybrid.dedupe_by_parent(candidates, topk=resolved_topk)
+    kb_versions: dict = {}
     if expand_parent and hits:
         _attach_parents(hits, as_of=as_of, kb_ids=kb_ids)
+        # 版本快照：命中带上来源知识库的 corpus/index 版本，供 trace/评估追溯。
+        kb_versions = _attach_kb_versions(hits, kb_ids=kb_ids)
 
     elapsed = int((time.perf_counter() - started) * 1000)
     logger.info(
@@ -296,6 +299,7 @@ def retrieve(
             "mode_requested": mode,
             "mode_rescued": rescued_mode,
             "effective_as_of": as_of,
+            "kb_versions": kb_versions,
         },
     )
 
@@ -308,24 +312,30 @@ def _attach_parents(
 ) -> None:
     """按 parent_id 批量回表取整条法条 + 时效元信息，必要时兜底过滤失效条。
 
+    回表同时校验文档状态与版本：Milvus 里可能残留旧版本/已删除文档的向量，
+    父块或文档在 MySQL 中查不到（或 ``chunk.version != doc.version``、
+    文档非 ``ready``）时直接丢弃该命中，避免用过期法条作答。
+
     ``kb_ids`` 非空时，回表 SQL 也带 kb 条件：即使向量过滤被绕过，也不会把
     其他知识库/租户的正文取回来。
     """
     parent_ids = [h.parent_id or h.chunk_id for h in hits]
     from app.db.mysql import get_engine
 
-    stmt = text(
-        "SELECT id, content, effective_from, effective_to, version FROM document_chunks "
-        "WHERE id IN :ids AND chunk_type = 'parent' AND is_enabled = 1"
-    ).bindparams(bindparam("ids", expanding=True))
-    params: dict = {"ids": parent_ids}
+    base = (
+        "SELECT c.id, c.content, c.effective_from, c.effective_to, c.version "
+        "FROM document_chunks c JOIN documents d ON d.id = c.doc_id "
+        "WHERE c.id IN :ids AND c.chunk_type = 'parent' AND c.is_enabled = 1 "
+        "AND d.status = 'ready' AND c.version = d.version"
+    )
     if kb_ids:
         stmt = text(
-            "SELECT id, content, effective_from, effective_to, version FROM document_chunks "
-            "WHERE id IN :ids AND kb_id IN :kbs "
-            "AND chunk_type = 'parent' AND is_enabled = 1"
+            base + " AND c.kb_id IN :kbs"
         ).bindparams(bindparam("ids", expanding=True), bindparam("kbs", expanding=True))
-        params = {"ids": parent_ids, "kbs": list(kb_ids)}
+        params: dict = {"ids": parent_ids, "kbs": list(kb_ids)}
+    else:
+        stmt = text(base).bindparams(bindparam("ids", expanding=True))
+        params = {"ids": parent_ids}
     try:
         with get_engine().connect() as conn:
             rows = conn.execute(stmt, params).fetchall()
@@ -339,8 +349,10 @@ def _attach_parents(
     kept: list[Hit] = []
     for hit in hits:
         row = meta.get(hit.parent_id or hit.chunk_id)
-        if row:
-            hit.parent_content, hit.effective_from, hit.effective_to, hit.version = row
+        if row is None:
+            # 父块不存在 / 文档已删除 / 版本已过期：向量是脏数据，不能作答。
+            continue
+        hit.parent_content, hit.effective_from, hit.effective_to, hit.version = row
         # 显式 as_of 时按日期兜底；老数据（日期为空）视为有效，不过度过滤。
         start = date_to_int(hit.effective_from)
         end = date_to_int(hit.effective_to)
@@ -348,6 +360,51 @@ def _attach_parents(
             continue
         kept.append(hit)
     hits[:] = kept
+
+
+def _attach_kb_versions(
+    hits: list[Hit],
+    *,
+    kb_ids: list[str] | None = None,
+) -> dict[str, dict[str, int]]:
+    """给命中补知识库版本快照；知识库已不存在时丢弃该命中。
+
+    返回 ``{kb_id: {"corpus_version": n, "index_version": n}}``，写入检索 debug
+    以便 trace 与评估能追溯"这条结果来自哪个版本"。
+    """
+    if not hits:
+        return {}
+    wanted = sorted({h.kb_id for h in hits if h.kb_id})
+    if kb_ids:
+        allowed = set(kb_ids)
+        wanted = [kb for kb in wanted if kb in allowed]
+    if not wanted:
+        return {}
+    from app.db.mysql import get_engine
+
+    stmt = text(
+        "SELECT id, corpus_version, index_version FROM knowledge_bases WHERE id IN :ids"
+    ).bindparams(bindparam("ids", expanding=True))
+    try:
+        with get_engine().connect() as conn:
+            rows = conn.execute(stmt, {"ids": wanted}).fetchall()
+    except Exception as exc:  # noqa: BLE001 - 版本列缺失时降级为 0，不阻断检索
+        logger.warning("知识库版本回表失败，命中版本置 0：%s", exc)
+        return {}
+    versions = {
+        row[0]: {"corpus_version": int(row[1] or 0), "index_version": int(row[2] or 0)}
+        for row in rows
+    }
+    kept: list[Hit] = []
+    for hit in hits:
+        info = versions.get(hit.kb_id)
+        if info is None:
+            continue
+        hit.corpus_version = info["corpus_version"]
+        hit.index_version = info["index_version"]
+        kept.append(hit)
+    hits[:] = kept
+    return versions
 
 
 def _default_client():

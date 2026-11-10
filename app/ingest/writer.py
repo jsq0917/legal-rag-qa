@@ -56,21 +56,24 @@ def get_document_by_sha1(session: Session, kb_id: str, content_sha1: str) -> dic
 
 
 def upsert_document(session: Session, document: dict) -> None:
+    document = {"content_hash": None, "index_version": 1, **document}
     session.execute(
         text(
             """
             INSERT INTO documents
-                (id, kb_id, filename, file_type, file_size, content_sha1, file_sha1,
-                 storage_path, status, progress, parse_config, article_count, chunk_count,
-                 version, effective_from, effective_to)
+                (id, kb_id, filename, file_type, file_size, content_sha1, content_hash,
+                 index_version, file_sha1, storage_path, status, progress, parse_config,
+                 article_count, chunk_count, version, effective_from, effective_to)
             VALUES
-                (:id, :kb_id, :filename, :file_type, :file_size, :content_sha1, :file_sha1,
-                 :storage_path, :status, :progress, :parse_config, :article_count, :chunk_count,
-                 :version, :effective_from, :effective_to)
+                (:id, :kb_id, :filename, :file_type, :file_size, :content_sha1, :content_hash,
+                 :index_version, :file_sha1, :storage_path, :status, :progress, :parse_config,
+                 :article_count, :chunk_count, :version, :effective_from, :effective_to)
             ON DUPLICATE KEY UPDATE
                 -- content_sha1 必须一起更新：上传接口先落 pending 行（占位 sha1），
                 -- 真实内容算出后若不回写，去重（uk_kb_content）与"内容未变跳过"全部失效
                 content_sha1 = VALUES(content_sha1),
+                content_hash = VALUES(content_hash),
+                index_version = VALUES(index_version),
                 filename = VALUES(filename),
                 file_type = VALUES(file_type),
                 file_size = VALUES(file_size),
@@ -100,28 +103,35 @@ def update_document_status(
     error: str | None = None,
     article_count: int | None = None,
     chunk_count: int | None = None,
-) -> None:
-    session.execute(
-        text(
-            """
-            UPDATE documents
-               SET status = :status,
-                   progress = COALESCE(:progress, progress),
-                   error_msg = :error,
-                   article_count = COALESCE(:article_count, article_count),
-                   chunk_count = COALESCE(:chunk_count, chunk_count)
-             WHERE id = :doc_id
-            """
-        ),
-        {
-            "status": status,
-            "progress": progress,
-            "error": (error[:512] if error else None),
-            "article_count": article_count,
-            "chunk_count": chunk_count,
-            "doc_id": doc_id,
-        },
-    )
+    expected_version: int | None = None,
+) -> int:
+    """更新文档状态，返回受影响行数。
+
+    ``expected_version`` 用于并发保护：只有版本仍是本任务写出的版本时才更新，
+    否则返回 0，调用方据此放弃收尾（旧任务不得覆盖新任务状态）。
+    """
+    sql = """
+        UPDATE documents
+           SET status = :status,
+               progress = COALESCE(:progress, progress),
+               error_msg = :error,
+               article_count = COALESCE(:article_count, article_count),
+               chunk_count = COALESCE(:chunk_count, chunk_count)
+         WHERE id = :doc_id
+    """
+    params: dict = {
+        "status": status,
+        "progress": progress,
+        "error": (error[:512] if error else None),
+        "article_count": article_count,
+        "chunk_count": chunk_count,
+        "doc_id": doc_id,
+    }
+    if expected_version is not None:
+        sql += " AND version = :expected_version"
+        params["expected_version"] = expected_version
+    result = session.execute(text(sql), params)
+    return int(result.rowcount or 0)
 
 
 def delete_chunks(session: Session, doc_id: str) -> None:
@@ -268,6 +278,16 @@ def upsert_vectors(
 
 def delete_document_vectors(client, collection: str, doc_id: str) -> None:
     client.delete(collection_name=collection, filter=f'doc_id == "{doc_id}"')
+
+
+def delete_document_version_vectors(
+    client, collection: str, doc_id: str, version: int
+) -> None:
+    """只清理本任务写入的版本向量，避免误删并发新任务的索引。"""
+    client.delete(
+        collection_name=collection,
+        filter=f'doc_id == "{doc_id}" and version == {int(version)}',
+    )
 
 
 VECTOR_DELETE_BATCH = 200

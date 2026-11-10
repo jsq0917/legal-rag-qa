@@ -170,11 +170,6 @@ def run_ingest_job(
                 doc_id=doc_id,
                 force=force,
             )
-        if result.status in {"created", "updated"}:
-            from app.db.mysql import session_scope
-
-            with session_scope() as db:
-                bump_kb_versions(db, kb_id, corpus=True, index=True)
         logger.info(
             "入库完成 doc=%s 文件=%s 状态=%s 条=%d 子块=%d 耗时=%dms",
             result.doc_id,
@@ -269,9 +264,14 @@ def disable_chunk(session: Session, chunk_id: str) -> None:
     bump_kb_versions(session, row["kb_id"], corpus=True, index=True)
 
 
-def delete_document(session: Session, doc_id: str) -> None:
+def delete_document(session: Session, doc_id: str) -> dict:
+    """删除文档：Milvus 向量 → MySQL 行（块靠外键级联）→ 版本号 +1。
+
+    返回 ``{"kb_id": ..., "storage_path": ...}``，源文件由调用方在事务提交
+    **成功之后**调用 :func:`purge_document_file` 清理——先删文件再回滚会不可逆。
+    """
     row = session.execute(
-        text("SELECT kb_id FROM documents WHERE id = :id"), {"id": doc_id}
+        text("SELECT kb_id, storage_path FROM documents WHERE id = :id"), {"id": doc_id}
     ).mappings().first()
     if row is None:
         raise LookupError("文档不存在")
@@ -282,6 +282,30 @@ def delete_document(session: Session, doc_id: str) -> None:
     session.execute(text("DELETE FROM documents WHERE id = :id"), {"id": doc_id})
     refresh_kb_counts(session, row["kb_id"])
     bump_kb_versions(session, row["kb_id"], corpus=True, index=True)
+    return {"kb_id": row["kb_id"], "storage_path": row["storage_path"]}
+
+
+def purge_document_file(storage_path: str | None, kb_id: str) -> bool:
+    """删掉单个文档的源文件；只允许删上传目录内该知识库下的文件。"""
+    if not storage_path:
+        return False
+    root = get_settings().upload_path.resolve()
+    target = Path(storage_path)
+    if not target.is_absolute():
+        target = (Path.cwd() / target)
+    try:
+        resolved = target.resolve()
+    except OSError:
+        return False
+    try:
+        resolved.relative_to((root / kb_id).resolve())
+    except ValueError:
+        logger.warning("拒绝删除上传目录外的源文件 path=%s kb=%s", storage_path, kb_id)
+        return False
+    if not resolved.is_file():
+        return False
+    resolved.unlink(missing_ok=True)
+    return True
 
 
 def delete_knowledge_base(session: Session, kb_id: str) -> dict:

@@ -37,6 +37,7 @@ from app.ingest.service import (
     delete_document as delete_document_service,
     delete_knowledge_base,
     disable_chunk,
+    purge_document_file,
     purge_kb_files,
     run_ingest_job,
     save_upload,
@@ -290,11 +291,13 @@ def remove_document(
 ) -> dict:
     _require_doc_scope(db, doc_id, scope, write=True)
     try:
-        delete_document_service(db, doc_id)
+        result = delete_document_service(db, doc_id)
     except LookupError as exc:
         raise NotFoundError(str(exc)) from exc
     db.commit()
-    return {"deleted": doc_id}
+    # 事务提交成功后才删源文件：失败回滚时至少文件还在
+    purged = purge_document_file(result.get("storage_path"), result.get("kb_id") or "")
+    return {"deleted": doc_id, "file_purged": purged}
 
 
 @router.post("/documents/{doc_id}/reingest", status_code=202, summary="重新解析（源文件缺失则报错）")
