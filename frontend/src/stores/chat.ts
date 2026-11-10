@@ -84,12 +84,13 @@ export const useChatStore = defineStore('chat', () => {
     loadingMessages.value = true
     try {
       const page = await sessionApi.listMessages(id)
-      messages.value = page.items
+      // 快速连续切换时，先发出的请求可能后返回；只让当前会话的结果落地
+      if (currentId.value === id) messages.value = page.items
     } catch (err) {
-      messages.value = []
+      if (currentId.value === id) messages.value = []
       throw err
     } finally {
-      loadingMessages.value = false
+      if (currentId.value === id) loadingMessages.value = false
     }
   }
 
@@ -142,8 +143,15 @@ export const useChatStore = defineStore('chat', () => {
     })
   }
 
-  function handleEvent(evt: SSEEvent) {
-    if (!draft.value) draft.value = emptyDraft()
+  /** 归并一帧 SSE。
+   *
+   * ``sid`` 是发起本次流时的会话 id：用户切走后旧流可能还有缓冲事件，
+   * 必须整帧丢弃，既不能重建草稿（会在新会话里凭空出现回答），也不能
+   * 把旧会话的来源/正文写进当前界面。draft 为 null 同样意味着流已被
+   * 切换/结束清理，不允许用事件把它恢复。
+   */
+  function handleEvent(evt: SSEEvent, sid: string) {
+    if (currentId.value !== sid || !draft.value) return
     const d = draft.value
     switch (evt.event) {
       case 'meta':
@@ -210,6 +218,8 @@ export const useChatStore = defineStore('chat', () => {
     if (!currentId.value) {
       await createSession()
     }
+    // 本次流归属的会话：后续事件与落库都以它为准，切走即作废
+    const sid = currentId.value
     appendUser(text)
     draft.value = emptyDraft()
 
@@ -224,9 +234,9 @@ export const useChatStore = defineStore('chat', () => {
           query: text,
           history,
           kb_ids: kb_override ?? (kbIds.value.length ? kbIds.value : null),
-          session_id: currentId.value || null,
+          session_id: sid || null,
         },
-        handleEvent,
+        (evt) => handleEvent(evt, sid),
       )
     } catch (err) {
       if (sse.aborted.value) {
@@ -235,7 +245,8 @@ export const useChatStore = defineStore('chat', () => {
         if (draft.value) draft.value.error = errorText(err)
       }
     } finally {
-      const d = draft.value
+      // 切走会话后旧流的残留草稿不得落到新会话的消息列表里
+      const d = currentId.value === sid ? draft.value : null
       let created: UiMessage | null = null
       if (d && (d.content || d.error)) {
         messages.value.push({

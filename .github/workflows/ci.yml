@@ -25,15 +25,32 @@ jobs:
 
       # 单测约定全离线：不加载 bge-m3/reranker、不调大模型、不连 MySQL/Redis/Milvus。
       # 因此跳过 torch / transformers / sentence-transformers / FlagEmbedding / peft
-      # 这些只在真实入库/检索时才会加载的重包（合计数 GB），CI 只装测试实际用到的依赖。
+      # 以及 Linux 上随 torch 一起拉取的 CUDA 运行库（合计 4GB+），CI 只装测试
+      # 实际用到的依赖。锁文件本身不变，生产镜像仍按完整依赖构建。
       - name: 安装依赖（跳过模型运行时重包）
         run: >
           uv sync --frozen
           --no-install-package torch
+          --no-install-package triton
           --no-install-package transformers
           --no-install-package sentence-transformers
           --no-install-package FlagEmbedding
           --no-install-package peft
+          --no-install-package nvidia-cublas
+          --no-install-package nvidia-cuda-cupti
+          --no-install-package nvidia-cuda-nvrtc
+          --no-install-package nvidia-cuda-runtime
+          --no-install-package nvidia-cudnn-cu13
+          --no-install-package nvidia-cufft
+          --no-install-package nvidia-cufile
+          --no-install-package nvidia-curand
+          --no-install-package nvidia-cusolver
+          --no-install-package nvidia-cusparse
+          --no-install-package nvidia-cusparselt-cu13
+          --no-install-package nvidia-nccl-cu13
+          --no-install-package nvidia-nvjitlink
+          --no-install-package nvidia-nvshmem-cu13
+          --no-install-package nvidia-nvtx
 
       - name: 离线单测
         run: uv run --no-sync python -m pytest -q
@@ -57,6 +74,9 @@ jobs:
 
       - name: 安装依赖
         run: npm ci
+
+      - name: 单元测试
+        run: npm test
 
       - name: 类型检查
         run: npm run typecheck
