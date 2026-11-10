@@ -295,12 +295,15 @@ class AnswerEngine:
         try:
             use_multi = plan.intent.rewrite_type == "decompose" and len(plan.sub_queries or []) > 1
             if use_multi:
+                # 多跳必须混合检索：拆解子查询各自是单跳，但子查询之间靠稀疏路
+                # 命中跨法术语；这里固定 hybrid，不交给单查询的 auto 分流。
                 res = retrieve_multi(
                     plan.sub_queries,
                     kb_ids=list(plan.route.kb_ids) or None,
                     complexity=plan.intent.complexity,
                     law_hints=list(plan.intent.law_hints) or None,
                     anchor_query=plan.query,
+                    mode="hybrid",
                     settings=settings,
                     retrieve_fn=self._retrieve_fn or retrieve,
                 )
@@ -310,6 +313,9 @@ class AnswerEngine:
                     kb_ids=list(plan.route.kb_ids) or None,
                     complexity=plan.intent.complexity,
                     law_hints=list(plan.intent.law_hints) or None,
+                    mode="auto",
+                    rewrite_type=plan.intent.rewrite_type,
+                    route=plan.route.route,
                     settings=settings,
                 )
             return res.hits, None

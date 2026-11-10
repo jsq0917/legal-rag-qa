@@ -10,7 +10,10 @@
       → 截断到 topK（simple 3 / medium 5 / complex 8）
       → MySQL 批量回表取整条法条正文（保证进 prompt 的是完整条文）
 
-mode=dense 用于消融实验（L1 组：仅稠密）。
+``mode="auto"`` 按问题形态分流：simple / 非拆解单跳走 dense，多跳（decompose、
+complex）或跨法走 hybrid；低置信时回退 hybrid 重查（见 :func:`resolve_mode`）。
+
+mode=dense / hybrid 用于消融实验与显式对照（L1/L3 组），不做自动回退。
 """
 
 from __future__ import annotations
@@ -34,6 +37,52 @@ logger = get_logger("lawanswer.retrieval")
 MULTI_POOL_FACTOR = 1.5
 
 
+def resolve_mode(
+    *,
+    complexity: str = "medium",
+    rewrite_type: str = "direct",
+    law_hints: list[str] | None = None,
+    route: str | None = None,
+    settings: Settings | None = None,
+) -> str:
+    """按问题形态选择检索通道（``dense`` / ``hybrid``）。
+
+    依据现有消融：单跳问题纯稠密 Recall@5 0.7405，高于混合 0.7024（−3.8pt）；
+    多跳/跨法问题需要稀疏路的术语精确匹配，含 decompose 子查询、complex
+    复杂度、cross_law 路由或多法域 hints 时保留 hybrid。
+
+    ``RETRIEVAL_MODE_ROUTING=false`` 时一律 hybrid，等价于改动前的线上行为。
+    """
+    s = settings or get_settings()
+    if not s.retrieval_mode_routing:
+        return "hybrid"
+    if rewrite_type == "decompose" or complexity == "complex":
+        return "hybrid"
+    if route == "cross_law" or len(law_hints or []) > 1:
+        return "hybrid"
+    return "dense"
+
+
+def _rerank_candidates(hits: list[Hit], question: str, reranker) -> list[Hit]:
+    """按 parent 预去重 → cross-encoder 打分 → 分数降序。"""
+    hits = hybrid.dedupe_by_parent(hits, topk=len(hits))
+    scores = reranker.score(question, [c.embed_text for c in hits])
+    for hit, score in zip(hits, scores):
+        hit.rerank_score = score
+    return sorted(hits, key=hybrid._rank_value, reverse=True)
+
+
+def _merge_by_parent(*groups: Sequence[Hit]) -> list[Hit]:
+    """多路结果按法条（parent）合并，同条保留排名分最高的一条。"""
+    by_parent: dict[str, Hit] = {}
+    for hits in groups:
+        for hit in hits:
+            key = hit.parent_id or hit.chunk_id
+            if key not in by_parent or hybrid._rank_value(hit) > hybrid._rank_value(by_parent[key]):
+                by_parent[key] = hit
+    return sorted(by_parent.values(), key=hybrid._rank_value, reverse=True)
+
+
 def retrieve(
     question: str,
     *,
@@ -44,6 +93,8 @@ def retrieve(
     use_rerank: bool = True,
     expand_parent: bool = True,
     law_hints: list[str] | None = None,
+    rewrite_type: str = "direct",
+    route: str | None = None,
     embedder: Embedder | None = None,
     reranker: Reranker | None = None,
     client=None,
@@ -58,8 +109,22 @@ def retrieve(
     # 意图层给出的法域（1-3 部法律）；为空则全库检索
     hints = list(law_hints or []) if s.retrieval_law_filter else []
 
+    # mode="auto"：按问题形态分流；显式 dense/hybrid 用于消融对照，不做回退。
+    auto_routed = mode == "auto"
+    effective_mode = (
+        resolve_mode(
+            complexity=complexity,
+            rewrite_type=rewrite_type,
+            law_hints=hints,
+            route=route,
+            settings=s,
+        )
+        if auto_routed
+        else mode
+    )
+
     if not question.strip():
-        return RetrievalResult([], question, resolved_topk, pool, complexity, mode, False, 0)
+        return RetrievalResult([], question, resolved_topk, pool, complexity, effective_mode, False, 0)
 
     embedder = embedder or get_embedder()
     client = client or _default_client()
@@ -71,7 +136,7 @@ def retrieve(
         embedding,
         pool=pool,
         kb_ids=kb_ids,
-        mode=mode,
+        mode=effective_mode,
         rrf_k=s.retrieval.rrf_k,
         ranker=s.retrieval_ranker,
         dense_weight=s.retrieval.dense_weight,
@@ -82,17 +147,47 @@ def retrieve(
     dense_hits = len(candidates)
 
     reranked = False
+    rescued_mode = False
     if use_rerank and candidates:
         # 重排前按法条（parent）预去重：同条多子块重复送 cross-encoder 既浪费算力，
         # 半句子块也容易误导打分。每条只保留融合分最高的子块。
-        if len(candidates) > 1:
-            candidates = hybrid.dedupe_by_parent(candidates, topk=len(candidates))
         reranker = reranker or get_reranker(s)
-        scores = reranker.score(question, [c.embed_text for c in candidates])
-        for hit, score in zip(candidates, scores):
-            hit.rerank_score = score
-        candidates.sort(key=lambda h: h.rerank_score if h.rerank_score is not None else h.score, reverse=True)
+        candidates = _rerank_candidates(candidates, question, reranker)
         reranked = True
+
+        # 选路分流低置信回退：auto 判为 dense（单跳）但 top1 重排分过低，
+        # 说明单跳判断可能错了（实际需要跨条/术语精确匹配）→ hybrid 重查一次，
+        # 按法条合并保留高分。显式 mode=dense 的消融对照不触发。
+        if (
+            auto_routed
+            and effective_mode == "dense"
+            and s.retrieval_dense_rescue_score > 0
+        ):
+            top1_dense = hybrid._rank_value(candidates[0]) if candidates else 0.0
+            if top1_dense < s.retrieval_dense_rescue_score:
+                rescue = hybrid.search(
+                    client,
+                    collection,
+                    embedding,
+                    pool=pool,
+                    kb_ids=kb_ids,
+                    mode="hybrid",
+                    rrf_k=s.retrieval.rrf_k,
+                    ranker=s.retrieval_ranker,
+                    dense_weight=s.retrieval.dense_weight,
+                    sparse_weight=s.retrieval.sparse_weight,
+                    law_hints=hints,
+                    sparse_pool_ratio=getattr(s, "retrieval_sparse_pool_ratio", 1.0),
+                )
+                if rescue:
+                    rescue = _rerank_candidates(rescue, question, reranker)
+                    candidates = _merge_by_parent(candidates, rescue)
+                effective_mode = "hybrid"
+                rescued_mode = True
+                logger.info(
+                    "检索选路低置信回退：dense top1=%.3f < %.2f，改用 hybrid 重查合并 → %d 条候选",
+                    top1_dense, s.retrieval_dense_rescue_score, len(candidates),
+                )
 
         # 法域过滤低置信回退：top1 重排分过低 → 意图大概率判错法域，正确法条
         # 被硬过滤整条筛掉（law_hints 质量随意图模型波动）。无过滤重查一次，
@@ -109,7 +204,7 @@ def retrieve(
                 embedding,
                 pool=pool,
                 kb_ids=kb_ids,
-                mode=mode,
+                mode=effective_mode,
                 rrf_k=s.retrieval.rrf_k,
                 ranker=s.retrieval_ranker,
                 dense_weight=s.retrieval.dense_weight,
@@ -118,17 +213,8 @@ def retrieve(
                 sparse_pool_ratio=getattr(s, "retrieval_sparse_pool_ratio", 1.0),
             )
             if rescue:
-                rescue = hybrid.dedupe_by_parent(rescue, topk=len(rescue))
-                for hit, score in zip(
-                    rescue, reranker.score(question, [c.embed_text for c in rescue])
-                ):
-                    hit.rerank_score = score
-                by_parent: dict[str, Hit] = {}
-                for hit in list(candidates) + rescue:
-                    key = hit.parent_id or hit.chunk_id
-                    if key not in by_parent or hybrid._rank_value(hit) > hybrid._rank_value(by_parent[key]):
-                        by_parent[key] = hit
-                candidates = sorted(by_parent.values(), key=hybrid._rank_value, reverse=True)
+                rescue = _rerank_candidates(rescue, question, reranker)
+                candidates = _merge_by_parent(candidates, rescue)
             logger.info(
                 "法域过滤低置信回退：top1 重排分 %.3f < %.2f，无过滤重查合并 → %d 条候选",
                 top1, s.retrieval_law_rescue_score, len(candidates),
@@ -158,7 +244,7 @@ def retrieve(
         topk=resolved_topk,
         pool=pool,
         complexity=complexity,
-        mode=mode,
+        mode=effective_mode,
         reranked=reranked,
         elapsed_ms=elapsed,
         debug={
@@ -168,7 +254,9 @@ def retrieve(
             "law_hints": hints,
             "rrf_k": s.retrieval.rrf_k,
             "ranker": s.retrieval_ranker,
-            "mode": mode,
+            "mode": effective_mode,
+            "mode_requested": mode,
+            "mode_rescued": rescued_mode,
         },
     )
 
@@ -225,6 +313,7 @@ def retrieve_multi(
     topk: int | None = None,
     law_hints: list[str] | None = None,
     anchor_query: str | None = None,
+    mode: str = "hybrid",
     settings: Settings | None = None,
     retrieve_fn=None,
     max_workers: int = 3,
@@ -264,6 +353,7 @@ def retrieve_multi(
             kb_ids=kb_ids,
             complexity=complexity,
             topk=per_topk,
+            mode=mode,
             law_hints=law_hints,
             settings=s,
         )
@@ -328,5 +418,6 @@ def retrieve_multi(
             "per_subquery_topk": per_topk,
             "failed_subqueries": len(errors),
             "merge": "interleave",
+            "retrieval_mode": mode,
         },
     )

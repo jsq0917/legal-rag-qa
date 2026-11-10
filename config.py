@@ -299,6 +299,18 @@ class Settings(BaseSettings):
     # 稀疏路候选池比例：<1 时稀疏少取候选，避免挤占稠密正确条的候选名额
     # （REPORT §4.4 证伪加权 RRF 后的真实怀疑点：名额之争而非权重之争）
     retrieval_sparse_pool_ratio: float = Field(default=1.0, ge=0.1, le=1.0)
+    # 检索选路分流：simple / 非拆解单跳走纯稠密（消融 L1 R@5 0.7405 高于
+    # 混合 L3 0.7024），decompose 多跳、complex、跨法则走混合（稀疏路对
+    # 跨法术语互补）。关闭后一律 hybrid，与旧行为一致。
+    retrieval_mode_routing: bool = Field(
+        default=True,
+        description="按复杂度/改写类型/法域数自动选择 dense 或 hybrid 检索",
+    )
+    # 自动选路走 dense 时的低置信回退：重排后 top1 < 阈值 → 再用 hybrid 检索
+    # 一次并按法条合并。bge-reranker-v2-m3 normalize 后相关条约 0.79、无关条
+    # 约 0.03，0.40 取两者中点偏保守；0 = 关闭回退。
+    # 仅作用于 auto 选路，显式 mode=dense 的消融对照不受影响。
+    retrieval_dense_rescue_score: float = Field(default=0.40, ge=0.0, le=1.0)
     qa_similarity_threshold: float = Field(default=0.90, ge=0.0, le=1.0)
     qa_bm25_topn: int = Field(default=3, ge=1, le=20)
     cache_qa_ttl: int = Field(default=604800, ge=60)

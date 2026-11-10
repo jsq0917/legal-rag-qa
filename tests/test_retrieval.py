@@ -11,7 +11,7 @@ from app.ingest.embedder import DummyEmbedder, Embedding
 from app.retrieval import hybrid
 from app.retrieval.hybrid import Hit, build_filter, build_kb_filter, dedupe_by_parent, to_hit
 from app.retrieval.rerank import DummyReranker
-from app.retrieval.service import mrr, recall_at_k, retrieve
+from app.retrieval.service import mrr, recall_at_k, resolve_mode, retrieve
 
 
 def _entity(chunk_id: str, parent: str, content: str, kb: str = "kb_labor",
@@ -454,3 +454,125 @@ class TestLawFilterRescue:
             settings=settings_factory(retrieval_law_filter=True, retrieval_law_rescue_score=0.0),
         )
         assert len(client.exprs) == 1
+
+
+# ---------------------------------------------------------------------------
+# 检索选路分流：simple / 单跳 dense，多跳 / 跨法 hybrid；低置信回退 hybrid
+# ---------------------------------------------------------------------------
+
+class TestResolveMode:
+    def test_routing_disabled_always_hybrid(self, settings_factory):
+        s = settings_factory(retrieval_mode_routing=False)
+        assert resolve_mode(complexity="simple", rewrite_type="direct", settings=s) == "hybrid"
+        assert resolve_mode(complexity="complex", rewrite_type="decompose", settings=s) == "hybrid"
+
+    def test_simple_single_hop_uses_dense(self, settings_factory):
+        s = settings_factory(retrieval_mode_routing=True)
+        assert resolve_mode(complexity="simple", rewrite_type="direct", settings=s) == "dense"
+        assert resolve_mode(complexity="medium", rewrite_type="simplify", settings=s) == "dense"
+
+    def test_multi_hop_and_cross_law_use_hybrid(self, settings_factory):
+        s = settings_factory(retrieval_mode_routing=True)
+        assert resolve_mode(complexity="medium", rewrite_type="decompose", settings=s) == "hybrid"
+        assert resolve_mode(complexity="complex", rewrite_type="direct", settings=s) == "hybrid"
+        assert resolve_mode(
+            complexity="simple", rewrite_type="direct",
+            law_hints=["中华人民共和国劳动合同法", "中华人民共和国劳动法"], settings=s,
+        ) == "hybrid"
+        assert resolve_mode(
+            complexity="simple", rewrite_type="direct", route="cross_law", settings=s,
+        ) == "hybrid"
+
+
+class ModeAwareMilvus:
+    """dense 检索返回弱相关行，hybrid 检索返回强相关行（用于回退断言）。"""
+
+    def __init__(self, dense_rows, hybrid_rows):
+        self.dense_rows = dense_rows
+        self.hybrid_rows = hybrid_rows
+        self.calls: list[str] = []
+
+    def search(self, **kw):
+        self.calls.append("dense")
+        return [[{"entity": r, "distance": 0.9 - i * 0.01}
+                 for i, r in enumerate(self.dense_rows)]]
+
+    def hybrid_search(self, **kw):
+        self.calls.append("hybrid")
+        return [[{"entity": r, "distance": 0.5 - i * 0.01}
+                 for i, r in enumerate(self.hybrid_rows)]]
+
+
+class TestModeRoutingRetrieve:
+    QUERY = "老板让我加班一天最多几小时"
+
+    def _weak_row(self):
+        return _entity("w1", "pw", "诉讼时效中断中止的制度规定")
+
+    def _strong_row(self):
+        # 正文包含原句全部字符，保证 DummyReranker 打出高置信分
+        return _entity("s1", "ps", f"{self.QUERY} 加班时间每日不得超过一小时的上限规定",
+                       law="中华人民共和国劳动法", article="第四十一条")
+
+    def test_auto_simple_uses_dense(self, settings_factory):
+        client = ModeAwareMilvus([self._strong_row()], [self._weak_row()])
+        res = retrieve(
+            self.QUERY, complexity="simple", rewrite_type="direct", mode="auto",
+            embedder=DummyEmbedder(), reranker=DummyReranker(), client=client,
+            expand_parent=False,
+            settings=settings_factory(retrieval_mode_routing=True,
+                                      retrieval_dense_rescue_score=0.0),
+        )
+        assert client.calls == ["dense"]
+        assert res.mode == "dense"
+        assert res.debug["mode_rescued"] is False
+
+    def test_auto_decompose_uses_hybrid(self, settings_factory):
+        client = ModeAwareMilvus([self._weak_row()], [self._strong_row()])
+        res = retrieve(
+            self.QUERY, complexity="medium", rewrite_type="decompose", mode="auto",
+            embedder=DummyEmbedder(), reranker=DummyReranker(), client=client,
+            expand_parent=False,
+            settings=settings_factory(retrieval_mode_routing=True),
+        )
+        assert client.calls == ["hybrid"]
+        assert res.mode == "hybrid"
+
+    def test_low_confidence_dense_falls_back_to_hybrid(self, settings_factory):
+        client = ModeAwareMilvus([self._weak_row()], [self._strong_row()])
+        res = retrieve(
+            self.QUERY, complexity="simple", rewrite_type="direct", mode="auto",
+            embedder=DummyEmbedder(), reranker=DummyReranker(), client=client,
+            expand_parent=False,
+            settings=settings_factory(retrieval_mode_routing=True,
+                                      retrieval_dense_rescue_score=0.5),
+        )
+        assert client.calls == ["dense", "hybrid"]
+        assert res.mode == "hybrid"
+        assert res.debug["mode_rescued"] is True
+        assert res.hits[0].law_article == "中华人民共和国劳动法#第四十一条"
+
+    def test_confident_dense_skips_fallback(self, settings_factory):
+        client = ModeAwareMilvus([self._strong_row()], [self._weak_row()])
+        res = retrieve(
+            self.QUERY, complexity="simple", rewrite_type="direct", mode="auto",
+            embedder=DummyEmbedder(), reranker=DummyReranker(), client=client,
+            expand_parent=False,
+            settings=settings_factory(retrieval_mode_routing=True,
+                                      retrieval_dense_rescue_score=0.5),
+        )
+        assert client.calls == ["dense"]
+        assert res.debug["mode_rescued"] is False
+
+    def test_explicit_dense_never_rescues(self, settings_factory):
+        """显式 mode=dense 是消融对照，不能被低置信回退污染。"""
+        client = ModeAwareMilvus([self._weak_row()], [self._strong_row()])
+        res = retrieve(
+            self.QUERY, complexity="simple", mode="dense",
+            embedder=DummyEmbedder(), reranker=DummyReranker(), client=client,
+            expand_parent=False,
+            settings=settings_factory(retrieval_mode_routing=True,
+                                      retrieval_dense_rescue_score=0.5),
+        )
+        assert client.calls == ["dense"]
+        assert res.debug["mode_rescued"] is False
