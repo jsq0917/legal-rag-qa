@@ -31,6 +31,11 @@ from app.generation.citations import normalize_law as _norm_law
 ROOT = Path(__file__).resolve().parents[2]
 ANSWERS_PATH = ROOT / "eval" / "results" / "qa_answers.jsonl"
 RAGAS_PATH = ROOT / "eval" / "results" / "ragas.json"
+USAGE_PATH = ROOT / "eval" / "results" / "ragas_usage.json"
+
+#: 假设单价（元 / 百万 token）——仓库与百炼控制台无对应价目，仅作量级参考
+PRICE_PROMPT_PER_M = 2.0
+PRICE_COMPLETION_PER_M = 8.0
 
 METRIC_TARGETS = {
     "faithfulness": 0.85,
@@ -99,6 +104,10 @@ def collect(url: str, *, force: bool = False) -> None:
         print(f"已有 {len(done)} 条结果，跳过重采（--force 可强制重采）")
 
     ANSWERS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    gen_prompt = gen_completion = 0
+    batch_prompt = batch_completion = 0
+    batch_count = 0
+    batch_usage: list[dict[str, Any]] = []
     with ANSWERS_PATH.open("a" if done else "w", encoding="utf-8") as fh:
         for i, case in enumerate(cases, 1):
             if case["id"] in done:
@@ -155,12 +164,68 @@ def collect(url: str, *, force: bool = False) -> None:
             }
             fh.write(json.dumps(row, ensure_ascii=False) + "\n")
             fh.flush()
+            prompt_tokens = int((usage or {}).get("prompt_tokens") or 0)
+            completion_tokens = int((usage or {}).get("completion_tokens") or 0)
+            gen_prompt += prompt_tokens
+            gen_completion += completion_tokens
+            batch_prompt += prompt_tokens
+            batch_completion += completion_tokens
+            batch_count += 1
             print(
                 f"  [{i:02d}/{len(cases)}] {case['id']} route={row['route']} "
                 f"{elapsed}ms 答案 {len(answer)} 字 上下文 {len(row['contexts'])} 条"
+                + (f"  tokens {prompt_tokens}/{completion_tokens}" if usage else "")
                 + (f"  ERROR {error}" if error else "")
             )
-    print(f"采集完成 → {ANSWERS_PATH}")
+            if batch_count >= 20:
+                cost = _judge_cost(batch_prompt, batch_completion)
+                batch_usage.append(
+                    {
+                        "batch": len(batch_usage) + 1,
+                        "samples": batch_count,
+                        "prompt_tokens": batch_prompt,
+                        "completion_tokens": batch_completion,
+                        "cost_cny_estimate": cost,
+                    }
+                )
+                print(
+                    f"[采集批 {len(batch_usage)}] {batch_count} 条，"
+                    f"prompt {batch_prompt} / completion {batch_completion} tokens，"
+                    f"约 ¥{cost:.4f}（假设价）"
+                )
+                batch_prompt = batch_completion = 0
+                batch_count = 0
+    if batch_count:
+        cost = _judge_cost(batch_prompt, batch_completion)
+        batch_usage.append(
+            {
+                "batch": len(batch_usage) + 1,
+                "samples": batch_count,
+                "prompt_tokens": batch_prompt,
+                "completion_tokens": batch_completion,
+                "cost_cny_estimate": cost,
+            }
+        )
+        print(
+            f"[采集批 {len(batch_usage)}] {batch_count} 条，"
+            f"prompt {batch_prompt} / completion {batch_completion} tokens，"
+            f"约 ¥{cost:.4f}（假设价）"
+        )
+    summary = {
+        "note": "生成侧 token 来自 SSE done 事件；单价为假设价，实际以百炼账单为准",
+        "samples": sum(b["samples"] for b in batch_usage),
+        "prompt_tokens": gen_prompt,
+        "completion_tokens": gen_completion,
+        "cost_cny_estimate": _judge_cost(gen_prompt, gen_completion),
+        "batches": batch_usage,
+    }
+    (ROOT / "eval" / "results" / "ragas_collect_usage.json").write_text(
+        json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    print(
+        f"采集完成 → {ANSWERS_PATH}；生成 token：prompt {gen_prompt} / "
+        f"completion {gen_completion}，约 ¥{summary['cost_cny_estimate']:.4f}（假设价）"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -242,7 +307,53 @@ def citation_report(rows: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
-def _build_llm_and_embeddings():
+def _make_usage_counter():
+    """judge 调用的 token 计数器（LangChain callback）。
+
+    RAGAS 内部直接调 judge LLM，不经过项目里的 LLMClient，因此这里挂
+    callback 统计 prompt/completion；兼容 ``usage_metadata`` 与
+    ``llm_output.token_usage`` 两种挂载形态（LangChain 版本差异）。
+    """
+    from langchain_core.callbacks import BaseCallbackHandler
+
+    class _Counter(BaseCallbackHandler):
+        def __init__(self) -> None:
+            self.prompt_tokens = 0
+            self.completion_tokens = 0
+            self.calls = 0
+
+        def on_llm_end(self, response, **kwargs):  # noqa: ANN001
+            self.calls += 1
+            for gens in getattr(response, "generations", []) or []:
+                for gen in gens:
+                    usage = getattr(getattr(gen, "message", None), "usage_metadata", None)
+                    if usage:
+                        self.prompt_tokens += int(usage.get("input_tokens") or 0)
+                        self.completion_tokens += int(usage.get("output_tokens") or 0)
+            info = (getattr(response, "llm_output", None) or {}).get("token_usage") or {}
+            if info:
+                self.prompt_tokens += int(info.get("prompt_tokens") or 0)
+                self.completion_tokens += int(info.get("completion_tokens") or 0)
+
+        def snapshot(self) -> dict[str, int]:
+            return {
+                "calls": self.calls,
+                "prompt_tokens": self.prompt_tokens,
+                "completion_tokens": self.completion_tokens,
+            }
+
+    return _Counter()
+
+
+def _judge_cost(prompt_tokens: int, completion_tokens: int) -> float:
+    return round(
+        prompt_tokens / 1e6 * PRICE_PROMPT_PER_M
+        + completion_tokens / 1e6 * PRICE_COMPLETION_PER_M,
+        6,
+    )
+
+
+def _build_llm_and_embeddings(callbacks=None):
     """judge LLM 走 OpenAI 兼容接口；embedding 用本地 bge-m3。"""
     from langchain_core.embeddings import Embeddings
     from langchain_openai import ChatOpenAI
@@ -275,33 +386,26 @@ def _build_llm_and_embeddings():
         temperature=0.0,
         timeout=180,
         max_retries=3,
+        callbacks=callbacks or None,
     )
     return LangchainLLMWrapper(llm), LangchainEmbeddingsWrapper(BgeM3Embeddings())
 
 
-def score(limit: int = 0) -> None:
+def score(limit: int = 0, batch_size: int = 20) -> None:
     from ragas import EvaluationDataset, evaluate
+    from ragas.run_config import RunConfig
 
     rows = _load_answers()
     if limit > 0:
         rows = rows[:limit]
     rows = [r for r in rows if (r.get("answer") or "").strip() and r.get("contexts")]
-    print(f"待打分样本 {len(rows)} 条")
+    if not rows:
+        raise SystemExit("没有可打分样本（答案或上下文为空）")
+    print(f"待打分样本 {len(rows)} 条，每批 {batch_size} 条")
     # 口径修正：剥离固定免责尾注（模板句不是模型论断，不该计入 faithfulness）
     stripped = sum(1 for r in rows if r["answer"].strip() != strip_disclaimer(r["answer"]).strip())
     if stripped:
         print(f"已剥离 {stripped} 条答案的固定免责尾注")
-
-    samples = [
-        {
-            "user_input": r["question"],
-            "response": strip_disclaimer(r["answer"]),
-            "retrieved_contexts": r["contexts"],
-            "reference": r["reference"],
-        }
-        for r in rows
-    ]
-    dataset = EvaluationDataset.from_list(samples)
 
     import ragas.metrics as ragas_metrics
 
@@ -328,40 +432,90 @@ def score(limit: int = 0) -> None:
         print(f"[WARN] ragas 未导出这些指标（版本差异）：{missing}")
     print(f"实际打分指标：{[(n, columns[n]) for n in wanted if n in columns]}")
 
-    llm, embeddings = _build_llm_and_embeddings()
-    from ragas.run_config import RunConfig
-
-    # judge 是远程 API：并发 8 折中（太高容易被限流重试，太低 40 条要跑一小时）
+    # judge 是远程 API：并发 8 折中（太高容易被限流重试，太低要跑很久）
     run_config = RunConfig(timeout=180, max_retries=6, max_workers=8)
     started = time.perf_counter()
-    result = evaluate(
-        dataset=dataset,
-        metrics=metrics,
-        llm=llm,
-        embeddings=embeddings,
-        run_config=run_config,
-        raise_exceptions=False,
-        show_progress=True,
-    )
+    per_metric_values: dict[str, list[float]] = {name: [] for name in columns}
+    per_sample: list[dict[str, Any]] = []
+    judge_totals = {"calls": 0, "prompt_tokens": 0, "completion_tokens": 0}
+    batches: list[dict[str, Any]] = []
+    consecutive_failures = 0
+
+    for idx, offset in enumerate(range(0, len(rows), batch_size), 1):
+        chunk = rows[offset : offset + batch_size]
+        counter = _make_usage_counter()
+        llm, embeddings = _build_llm_and_embeddings([counter])
+        dataset = EvaluationDataset.from_list(
+            [
+                {
+                    "user_input": r["question"],
+                    "response": strip_disclaimer(r["answer"]),
+                    "retrieved_contexts": r["contexts"],
+                    "reference": r["reference"],
+                }
+                for r in chunk
+            ]
+        )
+        try:
+            result = evaluate(
+                dataset=dataset,
+                metrics=metrics,
+                llm=llm,
+                embeddings=embeddings,
+                run_config=run_config,
+                raise_exceptions=False,
+                show_progress=False,
+            )
+        except Exception as exc:  # noqa: BLE001 - 失败即停，不做无脑重试
+            print(f"[批 {idx}] 打分失败：{type(exc).__name__}: {exc}")
+            consecutive_failures += 1
+            if consecutive_failures >= 2:
+                raise SystemExit("连续两批打分失败，停止（先查原因，不重试）") from exc
+            continue
+        consecutive_failures = 0
+
+        df = result.to_pandas()
+        for i, r in enumerate(chunk):
+            item: dict[str, Any] = {
+                "id": r["id"],
+                "type": r["type"],
+                "question": r["question"],
+                "route": r.get("route"),
+            }
+            for name, col in columns.items():
+                if col not in df.columns:
+                    continue
+                value = df[col].iloc[i]
+                score_value = None if value != value else round(float(value), 4)
+                item[name] = score_value
+                if score_value is not None:
+                    per_metric_values[name].append(score_value)
+            per_sample.append(item)
+
+        snap = counter.snapshot()
+        for key in judge_totals:
+            judge_totals[key] += snap[key]
+        cost = _judge_cost(snap["prompt_tokens"], snap["completion_tokens"])
+        batches.append(
+            {
+                "batch": idx,
+                "samples": len(chunk),
+                "ids": [r["id"] for r in chunk],
+                **snap,
+                "cost_cny_estimate": cost,
+            }
+        )
+        print(
+            f"[批 {idx}] {len(chunk)} 条，judge {snap['calls']} 次，"
+            f"prompt {snap['prompt_tokens']} / completion {snap['completion_tokens']} tokens，"
+            f"约 ¥{cost:.4f}（假设价）"
+        )
+
     elapsed = round(time.perf_counter() - started, 1)
-
-    df = result.to_pandas()
-    per_metric: dict[str, float] = {}
-    for name in wanted:
-        col = columns.get(name)
-        if col and col in df.columns:
-            values = [v for v in df[col].tolist() if v == v]  # 过滤 NaN
-            per_metric[name] = round(statistics.fmean(values), 4) if values else 0.0
-
-    per_sample = []
-    for i, r in enumerate(rows):
-        item = {"id": r["id"], "type": r["type"], "question": r["question"], "route": r.get("route")}
-        for name in wanted:
-            col = columns.get(name)
-            if col and col in df.columns:
-                item[name] = None if df[col].iloc[i] != df[col].iloc[i] else round(float(df[col].iloc[i]), 4)
-        per_sample.append(item)
-
+    per_metric: dict[str, float] = {
+        name: round(statistics.fmean(values), 4) if values else 0.0
+        for name, values in per_metric_values.items()
+    }
     verdict = {
         name: {
             "score": per_metric.get(name),
@@ -370,6 +524,34 @@ def score(limit: int = 0) -> None:
         }
         for name, target in METRIC_TARGETS.items()
     }
+
+    # 生成侧 token 来自 SSE done 事件的 token_usage；judge 侧来自 callback
+    gen_prompt = sum(int((r.get("token_usage") or {}).get("prompt_tokens") or 0) for r in rows)
+    gen_completion = sum(
+        int((r.get("token_usage") or {}).get("completion_tokens") or 0) for r in rows
+    )
+    gen_cost = _judge_cost(gen_prompt, gen_completion)
+    judge_cost = _judge_cost(judge_totals["prompt_tokens"], judge_totals["completion_tokens"])
+    usage = {
+        "note": "单价为假设价，实际以百炼账单为准",
+        "price_cny_per_million": {
+            "prompt": PRICE_PROMPT_PER_M,
+            "completion": PRICE_COMPLETION_PER_M,
+        },
+        "generation": {
+            "samples": len(rows),
+            "prompt_tokens": gen_prompt,
+            "completion_tokens": gen_completion,
+            "cost_cny_estimate": gen_cost,
+        },
+        "judge": {
+            **judge_totals,
+            "cost_cny_estimate": judge_cost,
+        },
+        "total_cost_cny_estimate": round(gen_cost + judge_cost, 6),
+        "batches": batches,
+    }
+
     payload = {
         "generated_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
         "samples": len(rows),
@@ -379,9 +561,11 @@ def score(limit: int = 0) -> None:
         "citations": citation_report(rows),
         "per_sample": per_sample,
         "failed_samples": [r for r in per_sample if any(v is not None and v < 0.5 for k, v in r.items() if k in wanted)][:10],
+        "usage": usage,
     }
     RAGAS_PATH.parent.mkdir(parents=True, exist_ok=True)
     RAGAS_PATH.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    USAGE_PATH.write_text(json.dumps(usage, ensure_ascii=False, indent=2), encoding="utf-8")
 
     print("\n" + "=" * 60)
     for name, info in verdict.items():
@@ -394,7 +578,12 @@ def score(limit: int = 0) -> None:
             f"来源条被引用 {cites['sources_coverage_mean']:.2%} / "
             f"错引行数 {cites['rows_with_hallucinated_citation']}"
         )
-    print(f"\n耗时 {elapsed}s，结果 → {RAGAS_PATH}")
+    print(
+        f"\n费用（假设价）：生成 ¥{gen_cost:.4f}（prompt {gen_prompt} / completion {gen_completion}）"
+        f" + judge ¥{judge_cost:.4f}（prompt {judge_totals['prompt_tokens']} / "
+        f"completion {judge_totals['completion_tokens']}） = ¥{usage['total_cost_cny_estimate']:.4f}"
+    )
+    print(f"\n耗时 {elapsed}s，结果 → {RAGAS_PATH}；用量 → {USAGE_PATH}")
 
 
 def main() -> None:
@@ -405,6 +594,7 @@ def main() -> None:
     parser.add_argument("--force", action="store_true", help="重采已有结果")
     parser.add_argument("--url", default="http://127.0.0.1:8101/api/chat/stream")
     parser.add_argument("--limit", type=int, default=0, help="只打分前 N 条（调试）")
+    parser.add_argument("--batch-size", type=int, default=20, help="打分每批条数，默认 20")
     args = parser.parse_args()
 
     os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
@@ -419,7 +609,7 @@ def main() -> None:
     if args.collect:
         collect(args.url, force=args.force)
     else:
-        score(args.limit)
+        score(args.limit, batch_size=max(1, args.batch_size))
 
 
 if __name__ == "__main__":
