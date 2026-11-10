@@ -85,7 +85,7 @@ def test_redis_roundtrip():
 
 def test_milvus_collection_ready():
     from app.db.milvus_client import get_milvus_client
-    from app.db.milvus_schema import DENSE_DIM, INDEX_SPECS
+    from app.db.milvus_schema import DENSE_DIM, FIELD_SPECS, INDEX_SPECS
     from config import get_settings
 
     s = get_settings()
@@ -95,7 +95,8 @@ def test_milvus_collection_ready():
 
     desc = client.describe_collection(s.milvus.collection)
     fields = {f["name"]: f for f in desc["fields"]}
-    assert len(fields) == 16
+    # 以 schema 定义为准：实际字段必须覆盖全部定义字段（允许未来新增扩展字段）
+    assert {spec.name for spec in FIELD_SPECS} <= set(fields)
     assert fields["dense_vector"]["params"]["dim"] == DENSE_DIM
     assert fields["kb_id"].get("is_partition_key") is True
 

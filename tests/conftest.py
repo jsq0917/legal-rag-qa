@@ -58,6 +58,37 @@ def client():
     return TestClient(app)
 
 
+@pytest.fixture(scope="module")
+def integration_auth_headers():
+    """联调接口的登录态：临时造一个 default 租户 editor 用户并签发 JWT。
+
+    阶段 4 接入 JWT 后，``/api/kbs``、``/api/documents``、``/api/retrieval``
+    等资源接口都要求登录。联调用例直接落库造用户，跳过验证码/注册流程，
+    模块结束后删除该用户。
+    """
+    import uuid
+
+    from sqlalchemy import text
+
+    from app.core.security import create_access_token, hash_password
+    from app.db.mysql import get_engine
+
+    username = f"it_{uuid.uuid4().hex[:10]}"
+    with get_engine().begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO users (username, password_hash, tenant_id, role) "
+                "VALUES (:u, :p, 'default', 'editor')"
+            ),
+            {"u": username, "p": hash_password("secret123")},
+        )
+        user_id = conn.execute(text("SELECT LAST_INSERT_ID()")).scalar()
+    token = create_access_token(user_id, username)
+    yield {"Authorization": f"Bearer {token}"}
+    with get_engine().begin() as conn:
+        conn.execute(text("DELETE FROM users WHERE id = :uid"), {"uid": user_id})
+
+
 @pytest.fixture
 def settings_factory():
     """构造不读真实 .env 的 Settings（避免测试受本机配置影响）。"""

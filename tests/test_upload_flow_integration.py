@@ -33,12 +33,14 @@ def client():
     return TestClient(app)
 
 
-def _wait_ready(client: TestClient, doc_id: str, timeout_s: float = 180.0) -> dict:
+def _wait_ready(
+    client: TestClient, doc_id: str, headers: dict | None = None, timeout_s: float = 180.0
+) -> dict:
     import time
 
     deadline = time.time() + timeout_s
     while time.time() < deadline:
-        detail = client.get(f"/api/documents/{doc_id}").json()
+        detail = client.get(f"/api/documents/{doc_id}", headers=headers).json()
         if detail["status"] in {"ready", "failed"}:
             return detail
         time.sleep(1.5)
@@ -46,6 +48,10 @@ def _wait_ready(client: TestClient, doc_id: str, timeout_s: float = 180.0) -> di
 
 
 class TestUploadNaming:
+    @pytest.fixture(autouse=True)
+    def _auth(self, integration_auth_headers):
+        self.headers = integration_auth_headers
+
     def test_filename_and_storage_path_preserved(self, client):
         filename = f"e2e-{uuid.uuid4().hex[:8]}.md"
         content = (
@@ -57,11 +63,12 @@ class TestUploadNaming:
             "/api/kbs/kb_labor/documents",
             files={"files": (filename, content.encode("utf-8"), "text/markdown")},
             data={"chunk_size": "300", "overlap": "50", "retrieval_mode": "hybrid"},
+            headers=self.headers,
         )
         assert resp.status_code == 202, resp.text
         doc_id = resp.json()["accepted"][0]["doc_id"]
 
-        detail = _wait_ready(client, doc_id)
+        detail = _wait_ready(client, doc_id, self.headers)
         assert detail["status"] == "ready", detail.get("error_msg")
         # 1) 展示名保持原名（不带随机前缀）
         assert detail["filename"] == filename
@@ -71,13 +78,13 @@ class TestUploadNaming:
         assert detail["article_count"] == 2
 
         # 3) 重新解析：源文件应能被找到（storage_path 正确）
-        reingest = client.post(f"/api/documents/{doc_id}/reingest")
+        reingest = client.post(f"/api/documents/{doc_id}/reingest", headers=self.headers)
         assert reingest.status_code == 202, reingest.text
-        again = _wait_ready(client, doc_id)
+        again = _wait_ready(client, doc_id, self.headers)
         assert again["status"] == "ready"
 
         # 清理
-        assert client.delete(f"/api/documents/{doc_id}").status_code == 200
+        assert client.delete(f"/api/documents/{doc_id}", headers=self.headers).status_code == 200
 
     def test_duplicate_upload_skips_without_phantom_row(self, client):
         """同内容重复上传 → 跳过，且不留永久"排队中"的占位行。"""
@@ -87,22 +94,24 @@ class TestUploadNaming:
             "/api/kbs/kb_labor/documents",
             files={"files": (filename, content.encode("utf-8"), "text/markdown")},
             data={"chunk_size": "300", "overlap": "50", "retrieval_mode": "hybrid"},
+            headers=self.headers,
         ).json()["accepted"][0]["doc_id"]
-        assert _wait_ready(client, first)["status"] == "ready"
+        assert _wait_ready(client, first, self.headers)["status"] == "ready"
 
         second = client.post(
             "/api/kbs/kb_labor/documents",
             files={"files": (filename, content.encode("utf-8"), "text/markdown")},
             data={"chunk_size": "300", "overlap": "50", "retrieval_mode": "hybrid"},
+            headers=self.headers,
         ).json()["accepted"][0]["doc_id"]
         assert second != first
 
         import time
 
         time.sleep(3)
-        docs = client.get("/api/kbs/kb_labor/documents").json()
+        docs = client.get("/api/kbs/kb_labor/documents", headers=self.headers).json()
         phantom = [d for d in docs if d["id"] == second]
         assert phantom == [], "重复上传的占位行应被清理，不能留下永久 pending"
         assert any(d["id"] == first and d["status"] == "ready" for d in docs)
 
-        assert client.delete(f"/api/documents/{first}").status_code == 200
+        assert client.delete(f"/api/documents/{first}", headers=self.headers).status_code == 200

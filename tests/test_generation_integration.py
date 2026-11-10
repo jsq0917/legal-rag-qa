@@ -128,14 +128,15 @@ class TestVectorGenerationReal:
     def test_real_retrieval_sources(self):
         """纯法条问题：真实混合检索 → sources 带真实法名/条号/章节。
 
-        注意 kb_labor 同时收录《劳动合同法》与《劳动法》两部法律，
-        因此来源可能是两部之一（标题带法律名即不会张冠李戴）。
+        kb_labor 除《劳动合同法》《劳动法》外还收录了实施条例、工伤保险条例等，
+        因此只约束"来源必须落在所选库内且能命中劳动合同法"，不写死法名白名单。
         """
         engine = AnswerEngine(llm_client=FakeLLMStream())
         frames = run_frames(engine, "劳动合同法第八十二条原文怎么规定", selected_kb_ids=["kb_labor"])
         sources = get_event(frames, "sources")["sources"]
         assert sources, "真实检索应有法条来源"
-        assert all(s["law"] in {"中华人民共和国劳动合同法", "中华人民共和国劳动法"} for s in sources)
+        assert all(s["kb_id"] == "kb_labor" for s in sources)
+        assert all(s["law"] for s in sources)
         assert any(s["law"] == "中华人民共和国劳动合同法" for s in sources)
         assert all(s["article_no"].startswith("第") for s in sources)
         assert all(s["chapter_path"] for s in sources)
@@ -143,13 +144,18 @@ class TestVectorGenerationReal:
         assert get_event(frames, "done")["token_usage"]["total_tokens"] == 530
 
     def test_context_contains_law_text(self):
-        """进 prompt 的上下文含法条正文（父块回填）。"""
+        """进 prompt 的上下文含法条正文（父块回填）。
+
+        top1 可能是《劳动合同法实施条例》等同库资料，因此只要求"资料块 + 正文"
+        存在，不绑定具体法名。
+        """
         llm = FakeLLMStream()
         engine = AnswerEngine(llm_client=llm)
         run_frames(engine, "劳动合同法第八十二条原文怎么规定", selected_kb_ids=["kb_labor"])
         user_msg = llm.calls[0]["messages"][-1]["content"]
         assert "【参考资料】" in user_msg
-        assert "【资料1】《中华人民共和国劳动合同法》" in user_msg
+        assert "【资料1】《" in user_msg
+        assert "第八十二条" in user_msg
         assert len(user_msg) > 200
 
     def test_no_matching_kb_guidance(self):
@@ -166,17 +172,43 @@ class TestVectorGenerationReal:
         assert get_event(frames, "done")["sources_count"] == 0
         assert get_event(frames, "meta")["route"] == "no_data"
 
-    def test_any_question_retrieves_topk(self):
-        """记录真实检索特性：无关问题也能召回 topK（无相关度下限）。
+    def test_unrelated_question_routes_to_no_data(self, monkeypatch):
+        """与法律无关的问题由路由层拦截，不检索、不生成。
 
-        这不是缺陷——生成层的忠实性约束（只能依据参考资料、资料未涉及
-        要明说）正是为这种场景设计的；阶段 7 的 RAGAS faithfulness 会量化。
+        意图用假客户端固定为 ``other``，避免真实 LLM 分类波动影响断言。
         """
+        import json
+
+        from app.generation.llm_client import LLMResponse
+        from app.orchestration import intent as intent_mod
+
+        class FakeIntentClient:
+            def chat(self, messages, **kwargs):
+                data = {
+                    "intent": "other",
+                    "rewrite_type": "direct",
+                    "sub_queries": ["如何用 Python 实现快速排序"],
+                    "complexity": "simple",
+                    "hit_structured": False,
+                    "structured_topic": None,
+                    "law_hints": [],
+                    "need_history": False,
+                }
+                return LLMResponse(
+                    content=json.dumps(data, ensure_ascii=False),
+                    model="fake",
+                    latency_ms=1,
+                    usage={},
+                )
+
+        monkeypatch.setattr(intent_mod, "get_intent_client", lambda settings=None: FakeIntentClient())
         llm = FakeLLMStream()
         engine = AnswerEngine(llm_client=llm)
-        frames = run_frames(engine, "量子计算机的工作原理是什么", selected_kb_ids=["kb_labor"])
-        assert get_event(frames, "done")["sources_count"] >= 1
-        assert llm.calls  # 有来源就会走生成（由 LLM 判断资料是否相关）
+        frames = run_frames(engine, "如何用 Python 实现快速排序", selected_kb_ids=["kb_labor"])
+        assert get_event(frames, "meta")["route"] == "no_data"
+        assert get_event(frames, "done")["sources_count"] == 0
+        assert llm.calls == []
+        assert "暂未在所选知识库中找到" in deltas(frames)
 
 
 class TestPersistenceReal:

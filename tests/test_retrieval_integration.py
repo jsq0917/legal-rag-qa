@@ -126,7 +126,7 @@ class TestHybridRetrieval:
 
 
 class TestPreviewApi:
-    def test_preview_returns_scores(self):
+    def test_preview_returns_scores(self, integration_auth_headers):
         from fastapi.testclient import TestClient
 
         from app.main import app
@@ -135,6 +135,7 @@ class TestPreviewApi:
         resp = client.post(
             "/api/retrieval/preview",
             json={"question": "试用期最长可以约定多久", "complexity": "simple"},
+            headers=integration_auth_headers,
         )
         assert resp.status_code == 200
         body = resp.json()
@@ -143,9 +144,18 @@ class TestPreviewApi:
         assert body["hits"][0]["rerank_score"] is not None
         assert body["hits"][0]["parent_content"]
 
-    def test_preview_rejects_empty_question(self):
+    def test_preview_rejects_empty_question(self, integration_auth_headers):
         from fastapi.testclient import TestClient
 
         from app.main import app
 
-        assert TestClient(app).post("/api/retrieval/preview", json={"question": ""}).status_code == 422
+        assert (
+            TestClient(app)
+            .post(
+                "/api/retrieval/preview",
+                json={"question": ""},
+                headers=integration_auth_headers,
+            )
+            .status_code
+            == 422
+        )
