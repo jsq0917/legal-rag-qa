@@ -31,6 +31,7 @@ from starlette.concurrency import iterate_in_threadpool, run_in_threadpool
 from starlette.responses import StreamingResponse
 
 from app.api.sessions import get_owned_session
+from app.core.access import AccessScope, resolve_access_scope
 from app.core.ratelimit import check_rate_limit
 from app.core.security import CurrentUser, TokenError, get_current_user_optional
 from app.core.sse import SSE_HEADERS, SSE_MEDIA_TYPE
@@ -48,23 +49,33 @@ class ChatStreamRequest(BaseModel):
     session_id: str | None = Field(default=None, description="会话 ID（ULID）；传了才落库")
 
 
+def prepare_scope(
+    user: CurrentUser | None,
+    session_id: str | None,
+    kb_ids: list[str] | None,
+) -> AccessScope:
+    """短连接内完成"会话归属 + 授权范围"解析；SSE 流期间不占 MySQL 连接。
+
+    单独抽成模块级函数，便于测试注入；生产路径始终走数据库解析。
+    """
+    with session_scope() as db:
+        if session_id:
+            get_owned_session(db, session_id, user.id)  # type: ignore[union-attr]
+        return resolve_access_scope(db, user, kb_ids)
+
+
 @router.post("/chat/stream", summary="SSE 流式问答（六段 Prompt + 双源路由）")
 async def chat_stream(
     payload: ChatStreamRequest,
     request: Request,
     user: CurrentUser | None = Depends(get_current_user_optional),
 ) -> Any:
-    # 会话模式必须登录且会话归属当前用户：否则任何人都能往任意会话里塞消息。
-    # 校验用短连接完成，SSE 流期间不占 MySQL 连接池连接。
-    if payload.session_id:
-        if user is None:
-            raise TokenError("会话模式需要登录")
+    # 会话归属校验 + 授权范围解析共用一次短连接。
+    # 客户端传入的 kb_ids 只作为"缩小范围"的请求，最终范围由服务端解析。
+    if payload.session_id and user is None:
+        raise TokenError("会话模式需要登录")
 
-        def _check_session() -> None:
-            with session_scope() as db:
-                get_owned_session(db, payload.session_id, user.id)  # type: ignore[union-attr]
-
-        await run_in_threadpool(_check_session)
+    scope = await run_in_threadpool(prepare_scope, user, payload.session_id, payload.kb_ids)
 
     # 限流：匿名按 IP 20 次/分，登录按 uid 60 次/分（防 LLM 费用被刷爆）。
     # Redis 是同步客户端，必须入线程池——直接调用会在 Redis 抖动时（最坏 5s）
@@ -79,6 +90,7 @@ async def chat_stream(
         history=payload.history or None,
         selected_kb_ids=payload.kb_ids,
         session_id=payload.session_id,
+        scope=scope,
     )
 
     async def event_stream():

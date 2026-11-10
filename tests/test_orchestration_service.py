@@ -59,12 +59,12 @@ class FakeQARetriever:
         self.calls: list[dict] = []
         self.exact_hit: QAPair | None = None  # 缓存前置命中时返回
 
-    def lookup_exact(self, query):
+    def lookup_exact(self, query, *, scope=None):
         """缓存前置：默认不命中，测试可预设 exact_hit。"""
         self.calls.append({"method": "lookup_exact", "query": query})
         return self.exact_hit
 
-    def lookup(self, query, *, structured_topic=None, kb_ids=None):
+    def lookup(self, query, *, structured_topic=None, kb_ids=None, scope=None):
         self.calls.append({"method": "lookup", "query": query, "structured_topic": structured_topic, "kb_ids": kb_ids})
         return self.result
 

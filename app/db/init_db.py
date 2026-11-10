@@ -107,7 +107,12 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     applied = apply_files(database)
-    print(f"[init_db] 完成，共执行 {applied} 条语句；数据库 {database}")
+    # 旧库补列（新建库在 01_schema.sql 里已包含，迁移会自动跳过）
+    from app.db.migrate_versions import ensure_mysql_columns
+    from app.db.mysql import get_engine
+
+    added = ensure_mysql_columns(get_engine(get_settings()))
+    print(f"[init_db] 完成，共执行 {applied} 条语句；版本字段新增 {added or '无'}；数据库 {database}")
     for name, count in list_tables(database):
         print(f"  - {name}: {count} 行")
     return 0

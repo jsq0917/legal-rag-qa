@@ -13,6 +13,9 @@ import math
 from dataclasses import dataclass
 from typing import Sequence
 
+#: Prompt 版本：任何模板/规则变化都必须改这里，答案缓存据此失效。
+PROMPT_VERSION = "2026-11-11.1"
+
 #: 六段式系统 Prompt（§6.5）：每段一条硬约束，缺一则回答质量失控
 SYSTEM_PROMPT = """你是 LawAnswer 法律咨询助手，服务对象是普通劳动者和 HR，熟悉《中华人民共和国劳动合同法》《中华人民共和国劳动法》《中华人民共和国民法典》等法律。
 

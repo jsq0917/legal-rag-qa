@@ -55,6 +55,8 @@ class CurrentUser:
     id: int
     username: str
     status: int = 1
+    tenant_id: str = "default"
+    role: str = "editor"
 
     def to_dict(self) -> dict:
         return {"id": self.id, "username": self.username}

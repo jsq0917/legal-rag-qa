@@ -35,6 +35,9 @@ from config import Settings, get_llm_api_key, get_settings
 
 logger = get_logger("lawanswer.intent")
 
+#: 意图 prompt 版本：模板或字段语义变化时 +1，旧意图缓存随之失效。
+INTENT_PROMPT_VERSION = "2026-11-11.1"
+
 #: 一次 LLM 调用同时产出 6 类信息的 system prompt（设计方案 §6.1）
 INTENT_SYSTEM_PROMPT = """你是法律问答系统的「意图识别与查询改写」模块。根据用户问题（可附最近对话历史），一次性输出 JSON 对象。只输出 JSON，不要输出解释、不要用 Markdown 代码块。
 
@@ -225,12 +228,14 @@ def reset_intent_client() -> None:
 # 意图结果缓存：同一问题（无历史）重复提问时跳过 ~1s 的 LLM 调用
 # ---------------------------------------------------------------------------
 
-def _intent_cache_key(query: str) -> str:
-    """归一化后取 SHA1，与 qa 精确缓存同一套归一化口径（去标点/停用词）。"""
+def _intent_cache_key(query: str, s: Settings | None = None) -> str:
+    """归一化后取 SHA1；key 带 prompt 版本与模型名，换模型/改 prompt 即失效。"""
     from app.orchestration.qa_cache import normalize_question
 
+    settings = s or get_settings()
     norm = normalize_question(query)
-    return "intent:" + hashlib.sha1(norm.encode("utf-8")).hexdigest()
+    raw = f"v2|{INTENT_PROMPT_VERSION}|{settings.llm_default_model}|{norm}"
+    return "intent:" + hashlib.sha1(raw.encode("utf-8")).hexdigest()
 
 
 def _intent_cache_get(query: str, s: Settings) -> IntentResult | None:
@@ -238,7 +243,7 @@ def _intent_cache_get(query: str, s: Settings) -> IntentResult | None:
     try:
         from app.db.redis_client import get_redis
 
-        raw = get_redis(s).get(_intent_cache_key(query))
+        raw = get_redis(s).get(_intent_cache_key(query, s))
     except Exception:  # noqa: BLE001 - 缓存不可用就当没命中
         return None
     if not raw:
@@ -259,7 +264,7 @@ def _intent_cache_put(query: str, result: IntentResult, s: Settings) -> None:
         from app.db.redis_client import get_redis
 
         get_redis(s).set(
-            _intent_cache_key(query),
+            _intent_cache_key(query, s),
             json.dumps(result.to_dict(), ensure_ascii=False),
             ex=s.intent_cache_ttl,
         )

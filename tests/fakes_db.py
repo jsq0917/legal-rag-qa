@@ -62,6 +62,11 @@ class FakeDB:
                 "doc_count": 2,
                 "chunk_count": 320,
                 "updated_at": _now(),
+                "corpus_version": 1,
+                "index_version": 1,
+                "is_public": 1,
+                "tenant_id": "default",
+                "owner_id": None,
             }
         ]
         self.docs: list[dict] = [
@@ -220,6 +225,27 @@ class FakeDB:
             return _Result(rows[: int(p.get("limit", 100))])
 
         # ---- knowledge_bases ----
+        if low.startswith("select id, corpus_version, index_version, is_public") and "from knowledge_bases" in low:
+            return _Result(
+                [
+                    {
+                        "id": k["id"],
+                        "corpus_version": k.get("corpus_version", 1),
+                        "index_version": k.get("index_version", 1),
+                        "is_public": k.get("is_public", 1),
+                        "tenant_id": k.get("tenant_id", "default"),
+                        "owner_id": k.get("owner_id"),
+                    }
+                    for k in self.kbs
+                ]
+            )
+        if low.startswith("select id, corpus_version, index_version from knowledge_bases"):
+            return _Result(
+                [
+                    {"id": k["id"], "corpus_version": k.get("corpus_version", 1), "index_version": k.get("index_version", 1)}
+                    for k in self.kbs
+                ]
+            )
         if low.startswith("select id, name, description") and "from knowledge_bases" in low:
             return _Result(self.kbs)
         if low.startswith("select 1 from knowledge_bases"):
@@ -234,6 +260,11 @@ class FakeDB:
                     "doc_count": 0,
                     "chunk_count": 0,
                     "updated_at": _now(),
+                    "corpus_version": 1,
+                    "index_version": 1,
+                    "is_public": 0,
+                    "tenant_id": "default",
+                    "owner_id": 1,
                 }
             )
             return _Result()

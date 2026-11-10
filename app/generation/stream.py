@@ -25,8 +25,10 @@ from __future__ import annotations
 import time
 import uuid
 from dataclasses import dataclass, field
+from datetime import date
 from typing import Any, Callable, Iterator, Sequence
 
+from app.core.access import AccessScope, answer_identity
 from app.core.logger import get_logger
 from app.core.sse import sse_frame
 from app.generation.context import (
@@ -46,6 +48,7 @@ from app.generation.persistence import persist_exchange
 from app.generation.prompts import (
     GREETING_REPLY,
     NO_DATA_REPLY,
+    PROMPT_VERSION,
     build_context_block,
     build_messages,
 )
@@ -144,6 +147,7 @@ class AnswerEngine:
         history: Sequence[dict] | None = None,
         selected_kb_ids: list[str] | None = None,
         session_id: str | None = None,
+        scope: AccessScope | None = None,
     ) -> Iterator[str]:
         """产出 SSE 帧（``event: X\\ndata: {...}\\n\\n``）。"""
         s = self.settings
@@ -153,17 +157,44 @@ class AnswerEngine:
         result = StreamResult()
         plan: QueryPlan | None = None
         query = (query or "").strip()
+        scope = scope or AccessScope.legacy_all()
+        identity = self._answer_identity(scope)
+        # 客户端勾选只能缩小范围；最终检索范围一律由 scope 决定。
+        effective_kb_ids = scope.restrict(selected_kb_ids)
 
         try:
-            # ---- 0) 答案级缓存前置：整段回答直接回放 ----
-            # 键是问题本身的 sha1，不做任何相似度判定，因此"同一问题问第二次"
-            # 必然命中。旧实现只在命中问答库（qa_pairs）时才写缓存，用户问的
-            # 绝大多数问题不在库里 → 永远写不进去 → 第二次仍要十几秒。
+            # ---- 0) 授权范围为空：不检索、不回缓存、不调 LLM ----
+            if scope.has_grants and not effective_kb_ids:
+                logger.info(
+                    "授权范围为空，走引导话术 requested=%d denied=%d",
+                    len(scope.requested_kb_ids),
+                    len(scope.denied_kb_ids),
+                )
+                yield _meta_frame(
+                    message_id,
+                    intent="general",
+                    route="no_data",
+                    rewrite_type="direct",
+                    complexity="simple",
+                    cached=False,
+                    degraded=False,
+                )
+                yield from self._replay_fixed(NO_DATA_REPLY, gen_cfg.replay_chunk_chars, result, started)
+                yield self._done_frame(result, started)
+                return
+
+            # ---- 0.5) 答案级缓存前置：整段回答直接回放 ----
+            # key 由「问题 + 租户/知识库/版本/模型/prompt/as-of」共同决定，
+            # 同一句话换库、换租户、换索引版本都不会互相回放。
             cached_answer = self.answer_cache.lookup(
-                query, history=list(history) if history else None
+                query,
+                history=list(history) if history else None,
+                cache_identity=identity,
             )
             if cached_answer is not None:
-                yield from self._answer_replay(cached_answer, result, gen_cfg, started, message_id)
+                yield from self._answer_replay(
+                    cached_answer, result, gen_cfg, started, message_id, scope
+                )
                 yield self._done_frame(result, started)
                 return
 
@@ -172,9 +203,10 @@ class AnswerEngine:
             plan = analyze_query(
                 query,
                 history=list(history) if history else None,
-                selected_kb_ids=selected_kb_ids,
+                selected_kb_ids=effective_kb_ids,
                 qa_retriever=self._qa_retriever,
                 settings=s,
+                scope=scope,
             )
             route = plan.route.route
 
@@ -210,7 +242,8 @@ class AnswerEngine:
 
             # ---- 分支 C：检索（pure_vector / hybrid / cross_law）----
             yield sse_frame("stage", {"stage": "retrieval"})
-            hits, degraded = self._retrieve(plan, s)
+            hits, degraded = self._retrieve(plan, s, scope)
+            hits = self._filter_hits(hits, scope)
             if degraded:
                 # 第 5 层容错：Milvus 故障 → 追加一条 meta 告知前端降级状态
                 logger.warning("Milvus 检索不可用，按 vector_unavailable 降级回答")
@@ -313,13 +346,18 @@ class AnswerEngine:
             yield self._done_frame(result, started)
         finally:
             # 第 4 层：客户端断开（GeneratorExit）或任何路径，finally 保证落库一次
-            self._cache_answer(query, result, plan)
+            self._cache_answer(query, result, plan, identity=identity, scope=scope)
             self._persist(session_id, query, result, plan)
 
     # ------------------------------------------------------------------
     # 内部步骤
     # ------------------------------------------------------------------
-    def _retrieve(self, plan: QueryPlan, settings: Settings) -> tuple[list, str | None]:
+    def _retrieve(
+        self,
+        plan: QueryPlan,
+        settings: Settings,
+        scope: AccessScope | None = None,
+    ) -> tuple[list, str | None]:
         """检索：按意图改写类型选路。
 
         - ``rewrite_type == "decompose"``（多跳拆解）→ ``retrieve_multi`` 并行
@@ -333,6 +371,13 @@ class AnswerEngine:
         """
         from app.retrieval.service import retrieve, retrieve_multi
 
+        # 路由给出的 kb_ids 再收敛一次：即使路由层被注入/越权，也不会扩大范围。
+        route_kb_ids = list(plan.route.kb_ids) if scope is None else scope.restrict(plan.route.kb_ids)
+        if scope is not None and scope.has_grants and not route_kb_ids:
+            return [], None
+        if scope is not None and scope.has_grants:
+            route_kb_ids = route_kb_ids or list(scope.kb_ids)
+
         try:
             use_multi = plan.intent.rewrite_type == "decompose" and len(plan.sub_queries or []) > 1
             if use_multi:
@@ -340,7 +385,7 @@ class AnswerEngine:
                 # 命中跨法术语；这里固定 hybrid，不交给单查询的 auto 分流。
                 res = retrieve_multi(
                     plan.sub_queries,
-                    kb_ids=list(plan.route.kb_ids) or None,
+                    kb_ids=list(route_kb_ids) or None,
                     complexity=plan.intent.complexity,
                     law_hints=list(plan.intent.law_hints) or None,
                     anchor_query=plan.query,
@@ -351,7 +396,7 @@ class AnswerEngine:
             else:
                 res = (self._retrieve_fn or retrieve)(
                     plan.query,
-                    kb_ids=list(plan.route.kb_ids) or None,
+                    kb_ids=list(route_kb_ids) or None,
                     complexity=plan.intent.complexity,
                     law_hints=list(plan.intent.law_hints) or None,
                     mode="auto",
@@ -414,10 +459,11 @@ class AnswerEngine:
         gen_cfg,
         started: float,
         message_id: str,
+        scope: AccessScope | None = None,
     ) -> Iterator[str]:
         """答案缓存命中：整段回放（保留打字机效果），不调意图/检索/LLM。"""
         result.cached = True
-        result.sources = list(cached.sources)
+        result.sources = self._filter_sources(cached.sources, scope)
         # 缓存里存的是「未补注」的原答案（写缓存时剔除），回放时按同一来源
         # 重新校验，保证实时校验与缓存命中给出一致的标记。
         answer = strip_citation_note(cached.answer)
@@ -446,7 +492,15 @@ class AnswerEngine:
     #: pure_structured 已由 qa_cache 写 qa:exact，重复写只是浪费内存。
     _ANSWER_CACHE_ROUTES = frozenset({"pure_vector", "hybrid", "cross_law"})
 
-    def _cache_answer(self, query: str, result: StreamResult, plan: QueryPlan | None) -> None:
+    def _cache_answer(
+        self,
+        query: str,
+        result: StreamResult,
+        plan: QueryPlan | None,
+        *,
+        identity: str = "",
+        scope: AccessScope | None = None,
+    ) -> None:
         """把本次成功生成的回答写入答案缓存。
 
         写入条件很严：缓存直出等于跳过 LLM，一条错答案会被固化整个 TTL。
@@ -467,9 +521,53 @@ class AnswerEngine:
                 intent=plan.intent.intent,
                 rewrite_type=plan.intent.rewrite_type,
                 complexity=plan.intent.complexity,
+                cache_identity=identity,
+                cache_meta=self._cache_meta(scope),
             )
         except Exception as exc:  # noqa: BLE001 - 缓存失败永不影响主链路
             logger.warning("答案缓存回写异常（已忽略）: %s", str(exc)[:200])
+
+    def _answer_identity(self, scope: AccessScope) -> str:
+        s = self.settings
+        as_of = s.retrieval_effective_as_of or date.today().isoformat()
+        return answer_identity(
+            scope,
+            model=s.llm_default_model,
+            prompt_version=PROMPT_VERSION,
+            as_of=as_of,
+        )
+
+    def _cache_meta(self, scope: AccessScope | None) -> dict:
+        s = self.settings
+        scope = scope or AccessScope.legacy_all()
+        return {
+            "namespace": scope.cache_namespace(),
+            "kb_ids": list(scope.kb_ids),
+            "corpus_versions": {g.kb_id: int(g.corpus_version) for g in scope.grants},
+            "index_versions": {g.kb_id: int(g.index_version) for g in scope.grants},
+            "model": s.llm_default_model,
+            "prompt_version": PROMPT_VERSION,
+            "as_of": s.retrieval_effective_as_of or date.today().isoformat(),
+        }
+
+    @staticmethod
+    def _filter_hits(hits: Sequence, scope: AccessScope | None) -> list:
+        if scope is None or not scope.has_grants:
+            return list(hits)
+        return [h for h in hits if scope.allows_kb(getattr(h, "kb_id", None))]
+
+    @staticmethod
+    def _filter_sources(sources: Sequence[dict], scope: AccessScope | None) -> list[dict]:
+        """来源级双保险：没有 kb_id 的旧缓存快照保持原样（key 已隔离）。"""
+        if scope is None or not scope.has_grants:
+            return list(sources)
+        kept: list[dict] = []
+        for src in sources:
+            kb_id = src.get("kb_id") if isinstance(src, dict) else None
+            if kb_id and not scope.allows_kb(str(kb_id)):
+                continue
+            kept.append(dict(src))
+        return kept
 
     def _structured_replay(self, plan: QueryPlan, result: StreamResult, gen_cfg, started: float) -> Iterator[str]:
         """纯结构化分支：标准答案分片回放（防御：无命中则降级引导话术）。"""

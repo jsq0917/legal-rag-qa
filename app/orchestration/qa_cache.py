@@ -36,6 +36,7 @@ import numpy as np
 from sqlalchemy import bindparam, text
 from sqlalchemy.engine import Engine
 
+from app.core.access import CACHE_SCHEMA_VERSION, AccessScope
 from app.core.logger import get_logger
 from app.db.mysql import get_engine
 from app.db.redis_client import get_redis
@@ -68,8 +69,15 @@ def normalize_question(query: str) -> str:
     return text_.strip()
 
 
-def cache_key(norm_query: str) -> str:
-    return REDIS_EXACT_PREFIX + hashlib.sha1(norm_query.encode("utf-8")).hexdigest()
+def cache_key(norm_query: str, scope_token: str = "") -> str:
+    """问答精确缓存 key。
+
+    带范围时与旧全局 key 完全隔离：上线后旧的跨库/跨租户口径缓存不可达。
+    """
+    if not scope_token:
+        return REDIS_EXACT_PREFIX + hashlib.sha1(norm_query.encode("utf-8")).hexdigest()
+    raw = f"v{CACHE_SCHEMA_VERSION}|{scope_token}|{norm_query}"
+    return REDIS_EXACT_PREFIX + hashlib.sha1(raw.encode("utf-8")).hexdigest()
 
 
 def _char_ngrams(text: str, n: int = 2) -> set[str]:
@@ -203,7 +211,7 @@ class QARetriever:
     # ------------------------------------------------------------------
     # 主入口
     # ------------------------------------------------------------------
-    def lookup_exact(self, query: str) -> QAPair | None:
+    def lookup_exact(self, query: str, *, scope: AccessScope | None = None) -> QAPair | None:
         """只查 Redis 精确缓存（0.1ms 级），不做 BM25 / 余弦门。
 
         用于编排层"缓存前置"：高频问题命中精确缓存就直接回放，
@@ -214,9 +222,10 @@ class QARetriever:
         if not query:
             return None
         norm = normalize_question(query)
-        hit = self._lookup_exact_cache(norm)
+        token = scope.cache_token() if scope is not None else ""
+        hit = self._lookup_exact_cache(norm, scope_token=token, scope=scope)
         if hit is not None:
-            self._touch(norm)
+            self._touch(norm, token)
             logger.info("精确缓存前置命中 q=%.40s id=%s", query, hit.id)
         return hit
 
@@ -226,16 +235,24 @@ class QARetriever:
         *,
         structured_topic: str | None = None,
         kb_ids: list[str] | None = None,
+        scope: AccessScope | None = None,
     ) -> QALookupResult:
         started = time.perf_counter()
         query = (query or "").strip()
         if not query:
             return QALookupResult(elapsed_ms=_elapsed(started))
 
+        token = scope.cache_token() if scope is not None else ""
+        # 授权范围优先：客户端/路由给的 kb_ids 只能进一步缩小，不能扩大。
+        if scope is not None and scope.has_grants:
+            kb_ids = scope.restrict(kb_ids)
+            if not kb_ids:
+                return QALookupResult(elapsed_ms=_elapsed(started))
+
         norm = normalize_question(query)
-        result = self._lookup_exact_cache(norm)
+        result = self._lookup_exact_cache(norm, scope_token=token, scope=scope)
         if result is not None:
-            self._touch(norm)
+            self._touch(norm, token)
             result = QALookupResult(
                 hit=result,
                 source="redis_exact",
@@ -257,7 +274,7 @@ class QARetriever:
             top1 = candidates[0]
             similarity, gate = self._similarity(query, top1.question_std)
             if self._gate_passed(similarity, gate):
-                self._on_hit(norm, top1)
+                self._on_hit(norm, top1, token)
                 logger.info(
                     "问答精确命中(%s) q=%.40s id=%s sim=%.4f 耗时=%dms",
                     "BM25+余弦" if gate == "cosine" else "BM25+字面门",
@@ -303,9 +320,15 @@ class QARetriever:
     # ------------------------------------------------------------------
     # 缓存
     # ------------------------------------------------------------------
-    def _lookup_exact_cache(self, norm: str) -> QAPair | None:
+    def _lookup_exact_cache(
+        self,
+        norm: str,
+        *,
+        scope_token: str = "",
+        scope: AccessScope | None = None,
+    ) -> QAPair | None:
         try:
-            raw = self.redis.get(cache_key(norm))
+            raw = self.redis.get(cache_key(norm, scope_token))
         except Exception as exc:  # noqa: BLE001 - 缓存故障直穿 MySQL
             logger.warning("Redis 读取失败，直查 MySQL: %s", exc)
             return None
@@ -313,12 +336,17 @@ class QARetriever:
             return None
         try:
             data = json.loads(raw)
-            return QAPair.from_dict(data)
+            hit = QAPair.from_dict(data)
         except (json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
             logger.warning("问答缓存内容损坏，忽略: %s", exc)
             return None
+        # 双保险：即使 key 意外相同，也不回放范围外的问答对。
+        if scope is not None and hit.kb_id and not scope.allows_kb(hit.kb_id):
+            logger.warning("问答缓存命中但知识库越权，忽略 id=%s kb=%s", hit.id, hit.kb_id)
+            return None
+        return hit
 
-    def _touch(self, norm: str) -> None:
+    def _touch(self, norm: str, scope_token: str = "") -> None:
         """命中后续期，防止热缓存"到点即失效"。
 
         原实现只在 ``_on_hit`` 写入时设 TTL，命中读路径完全不续期：
@@ -329,18 +357,22 @@ class QARetriever:
         if ttl <= 0:
             return
         try:
-            self.redis.expire(cache_key(norm), ttl)
+            self.redis.expire(cache_key(norm, scope_token), ttl)
         except Exception as exc:  # noqa: BLE001 - 续期失败不影响回放
             logger.warning("问答缓存续期失败: %s", exc)
 
-    def _on_hit(self, norm: str, qa: QAPair) -> None:
+    def _on_hit(self, norm: str, qa: QAPair, scope_token: str = "") -> None:
         """命中后回写精确缓存 + 自增 MySQL 计数。缓存写入失败不影响返回。
 
         原 ``qa:ans:{id}`` 与 ``qa:hot`` 两个 key 全工程只写不读（grep 证实
         无任何消费方），已移除——省 2 次热路径 Redis 写与无用内存。
         """
         try:
-            self.redis.set(cache_key(norm), json.dumps(qa.to_dict(), ensure_ascii=False), ex=self._settings.cache_qa_ttl)
+            self.redis.set(
+                cache_key(norm, scope_token),
+                json.dumps(qa.to_dict(), ensure_ascii=False),
+                ex=self._settings.cache_qa_ttl,
+            )
         except Exception as exc:  # noqa: BLE001
             logger.warning("问答缓存写入失败: %s", exc)
         try:

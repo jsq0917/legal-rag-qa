@@ -31,6 +31,16 @@ from tests.test_sse import (
 LAW = "中华人民共和国劳动合同法"
 
 
+@pytest.fixture(autouse=True)
+def _legacy_scope(monkeypatch):
+    """离线测试不连 MySQL：授权范围由 tests/test_access_scope.py 覆盖。"""
+    from app.core.access import AccessScope
+
+    monkeypatch.setattr(
+        "app.api.chat.prepare_scope", lambda user, session_id, kb_ids: AccessScope.legacy_all()
+    )
+
+
 @pytest.fixture
 def wired_client(monkeypatch):
     """把 AnswerEngine 的依赖换成假件，返回 (client, fake_llm, persist)。"""

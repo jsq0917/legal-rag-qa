@@ -17,8 +17,9 @@
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
+from app.core.access import AccessScope
 from app.core.logger import get_logger
 from app.orchestration.intent import recognize_intent
 from app.orchestration.models import IntentResult, RouteDecision
@@ -78,6 +79,7 @@ def analyze_query(
     selected_kb_ids: list[str] | None = None,
     qa_retriever: QARetriever | None = None,
     settings: Settings | None = None,
+    scope: AccessScope | None = None,
 ) -> QueryPlan:
     """意图识别 + 路由 + 结构化判定，返回 :class:`QueryPlan`。
 
@@ -85,15 +87,19 @@ def analyze_query(
     :param history: 最近对话 ``[{"role": ..., "content": ...}]``
     :param selected_kb_ids: 前端勾选的知识库；空 = 全部勾选
     :param qa_retriever: 注入问答检索器（测试用）
+    :param scope: 服务端授权范围；给定时任何路由结果都会被收敛到该范围
     """
     s = settings or get_settings()
     query = (query or "").strip()
     started = time.perf_counter()
+    if scope is not None:
+        # 客户端勾选只能缩小范围，不能扩大权限
+        selected_kb_ids = scope.restrict(selected_kb_ids)
 
     # 0) 缓存前置：先查 Redis 精确缓存（0.1ms 级），命中就直接走 pure_structured，
     #    跳过 LLM 意图识别（~1s）。高频问题 TTFT 从 ~2s 砍到 ~0.1s。
     qa_retriever = qa_retriever or get_qa_retriever()
-    exact_hit = qa_retriever.lookup_exact(query)
+    exact_hit = qa_retriever.lookup_exact(query, scope=scope)
     if exact_hit is not None:
         elapsed_ms = int((time.perf_counter() - started) * 1000)
         # 构造伪意图结果：标记 source="cache"，不调 LLM
@@ -107,7 +113,12 @@ def analyze_query(
             law_hints=[],
             source="cache",
         )
-        kb_ids = [exact_hit.kb_id] if exact_hit.kb_id else list(ALL_KB_IDS)
+        if exact_hit.kb_id:
+            kb_ids = [exact_hit.kb_id]
+        elif scope is not None and scope.has_grants:
+            kb_ids = list(scope.kb_ids)
+        else:
+            kb_ids = list(ALL_KB_IDS)
         cached_route = RouteDecision(
             route="pure_structured",
             kb_ids=kb_ids,
@@ -149,11 +160,16 @@ def analyze_query(
             query,
             structured_topic=intent_result.structured_topic,
             kb_ids=pre_route.kb_ids,
+            scope=scope,
         )
         if qa_result.hit is not None:
             # 精确命中 → 纯结构化：不碰 Milvus
             final_route = route(intent_result, selected_kb_ids=selected_kb_ids, structured_hit=True)
             logger.info("路由终裁：纯结构化（问答精确命中 id=%s）", qa_result.hit.id)
+
+    # 路由兜底收敛：cross_law 等分支会返回 ALL_KB_IDS，必须再按授权范围裁剪。
+    if scope is not None and scope.has_grants:
+        final_route = replace(final_route, kb_ids=scope.restrict(final_route.kb_ids) or list(scope.kb_ids))
 
     sub_queries = list(intent_result.sub_queries) or ([query] if query else [])
     elapsed_ms = int((time.perf_counter() - started) * 1000)

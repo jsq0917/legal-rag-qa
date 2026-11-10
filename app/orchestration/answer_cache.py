@@ -38,6 +38,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
+from app.core.access import CACHE_SCHEMA_VERSION
 from app.core.logger import get_logger
 from app.db.redis_client import get_redis
 from app.orchestration.qa_cache import normalize_question
@@ -64,8 +65,17 @@ _MIN_SELF_CONTAINED_CHARS = 8
 _WS_RE = re.compile(r"\s+")
 
 
-def answer_key(norm_query: str) -> str:
-    return REDIS_ANSWER_PREFIX + hashlib.sha1(norm_query.encode("utf-8")).hexdigest()
+def answer_key(norm_query: str, cache_identity: str = "") -> str:
+    """缓存 key。
+
+    ``cache_identity`` 由 :func:`app.core.access.answer_identity` 生成，
+    包含租户/知识库/版本/模型/prompt/as-of。为空时保留旧 key 形态，
+    仅用于离线单测；线上链路始终传非空值，因此旧格式缓存不会被读到。
+    """
+    if not cache_identity:
+        return REDIS_ANSWER_PREFIX + hashlib.sha1(norm_query.encode("utf-8")).hexdigest()
+    raw = f"v{CACHE_SCHEMA_VERSION}|{cache_identity}|{norm_query}"
+    return REDIS_ANSWER_PREFIX + hashlib.sha1(raw.encode("utf-8")).hexdigest()
 
 
 def is_self_contained(query: str) -> bool:
@@ -95,6 +105,7 @@ class CachedAnswer:
     rewrite_type: str = "direct"
     complexity: str = "simple"
     created_at: int = 0
+    cache_meta: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         return {
@@ -106,6 +117,7 @@ class CachedAnswer:
             "rewrite_type": self.rewrite_type,
             "complexity": self.complexity,
             "created_at": self.created_at,
+            "cache_meta": self.cache_meta,
         }
 
     @classmethod
@@ -119,6 +131,7 @@ class CachedAnswer:
             rewrite_type=str(data.get("rewrite_type", "direct")),
             complexity=str(data.get("complexity", "simple")),
             created_at=int(data.get("created_at", 0)),
+            cache_meta=dict(data.get("cache_meta") or {}),
         )
 
 
@@ -159,8 +172,18 @@ class AnswerCache:
     # ------------------------------------------------------------------
     # 读
     # ------------------------------------------------------------------
-    def lookup(self, query: str, *, history: list[dict] | None = None) -> CachedAnswer | None:
-        """命中返回快照，否则 None（None 即"照常走完整链路"，不是错误）。"""
+    def lookup(
+        self,
+        query: str,
+        *,
+        history: list[dict] | None = None,
+        cache_identity: str = "",
+    ) -> CachedAnswer | None:
+        """命中返回快照，否则 None（None 即"照常走完整链路"，不是错误）。
+
+        ``cache_identity`` 必须与写入时一致：租户/知识库/语料版本/模型/
+        prompt/as-of 任一变化都视为不同问题，旧缓存自然不可达。
+        """
         if not self.settings.cache_answer_enabled:
             return None
         query = (query or "").strip()
@@ -177,7 +200,7 @@ class AnswerCache:
             return None
 
         try:
-            raw = self.redis.get(answer_key(norm))
+            raw = self.redis.get(answer_key(norm, cache_identity))
         except Exception as exc:  # noqa: BLE001
             logger.warning("答案缓存读取失败，按未命中处理: %s", exc)
             return None
@@ -190,17 +213,25 @@ class AnswerCache:
             return None
         if not cached.answer.strip():
             return None
-        self._touch(norm)
+        # 旧格式（无 cache_meta）一律视为未命中：上线即失效，避免跨租户回放。
+        meta = cached.cache_meta
+        if int(meta.get("schema") or 0) != CACHE_SCHEMA_VERSION:
+            logger.info("答案缓存 schema 不匹配，忽略旧格式 q=%.40s", query)
+            return None
+        if str(meta.get("identity", "")) != cache_identity:
+            logger.info("答案缓存身份不匹配，忽略 q=%.40s", query)
+            return None
+        self._touch(norm, cache_identity)
         logger.info("答案缓存命中 q=%.40s route=%s 跳过意图/检索/LLM", query, cached.route)
         return cached
 
-    def _touch(self, norm: str) -> None:
+    def _touch(self, norm: str, cache_identity: str = "") -> None:
         """命中续期：热问题不能在第 7 天准时失效。"""
         ttl = self.settings.cache_answer_ttl
         if ttl <= 0:
             return
         try:
-            self.redis.expire(answer_key(norm), ttl)
+            self.redis.expire(answer_key(norm, cache_identity), ttl)
         except Exception as exc:  # noqa: BLE001
             logger.warning("答案缓存续期失败: %s", exc)
 
@@ -218,6 +249,8 @@ class AnswerCache:
         rewrite_type: str = "direct",
         complexity: str = "simple",
         error: str | None = None,
+        cache_identity: str = "",
+        cache_meta: dict | None = None,
     ) -> bool:
         """写入一条已生成回答。返回是否真的写了（便于测试与日志）。"""
         if not self.settings.cache_answer_enabled:
@@ -243,10 +276,15 @@ class AnswerCache:
             rewrite_type=rewrite_type or "direct",
             complexity=complexity or "simple",
             created_at=int(time.time()),
+            cache_meta={
+                "schema": CACHE_SCHEMA_VERSION,
+                "identity": cache_identity,
+                **dict(cache_meta or {}),
+            },
         )
         try:
             self.redis.set(
-                answer_key(norm),
+                answer_key(norm, cache_identity),
                 json.dumps(snapshot.to_dict(), ensure_ascii=False),
                 ex=self.settings.cache_answer_ttl,
             )

@@ -39,7 +39,12 @@ def db():
 
 
 @pytest.fixture
-def client(db):
+def client(db, monkeypatch):
+    from app.core.access import AccessScope
+
+    monkeypatch.setattr(
+        "app.api.chat.prepare_scope", lambda user, session_id, kb_ids: AccessScope.legacy_all()
+    )
     restore = override_deps(app, db)
     yield TestClient(app)
     restore()

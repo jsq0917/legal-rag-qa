@@ -39,6 +39,8 @@ CREATE TABLE IF NOT EXISTS knowledge_bases (
     embedding_model VARCHAR(64)  NOT NULL DEFAULT 'bge-m3',
     doc_count       INT          NOT NULL DEFAULT 0      COMMENT '冗余计数，列表页免 count',
     chunk_count     INT          NOT NULL DEFAULT 0,
+    corpus_version  BIGINT UNSIGNED NOT NULL DEFAULT 1   COMMENT '语料版本：增删改/重建即 +1，缓存按此失效',
+    index_version   BIGINT UNSIGNED NOT NULL DEFAULT 1   COMMENT '索引版本：向量索引重建即 +1',
     created_by      BIGINT UNSIGNED NULL,
     created_at      DATETIME(3)  NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     updated_at      DATETIME(3)  NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
@@ -130,6 +132,8 @@ CREATE TABLE IF NOT EXISTS documents (
     file_type     VARCHAR(16)  NOT NULL                COMMENT 'pdf/md/pptx/png/jpg',
     file_size     BIGINT       NOT NULL DEFAULT 0,
     content_sha1  CHAR(40)     NOT NULL                COMMENT '归一化正文 SHA1 —— 增量判定主键',
+    content_hash  CHAR(64)     NULL                    COMMENT '归一化正文 SHA-256（新口径，增量/幂等校验）',
+    index_version INT          NOT NULL DEFAULT 1      COMMENT '入索引时的知识库 index_version 快照',
     file_sha1     CHAR(40)     NOT NULL                COMMENT '原始字节 SHA1 —— 防重复上传',
     storage_path  VARCHAR(512) NULL,
     status        ENUM('pending','parsing','chunking','embedding','ready','failed','superseded')

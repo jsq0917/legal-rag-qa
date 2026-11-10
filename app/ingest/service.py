@@ -37,6 +37,21 @@ class KbBusyError(RuntimeError):
     """知识库还有文档在解析中，暂时不能删（后台任务会把行写回来）。"""
 
 
+def bump_kb_versions(session: Session, kb_id: str, *, corpus: bool = True, index: bool = True) -> None:
+    """语料/索引版本 +1：答案缓存 key 随之变化，旧缓存自然失效。"""
+    parts = []
+    if corpus:
+        parts.append("corpus_version = corpus_version + 1")
+    if index:
+        parts.append("index_version = index_version + 1")
+    if not parts:
+        return
+    session.execute(
+        text(f"UPDATE knowledge_bases SET {', '.join(parts)} WHERE id = :kb_id"),
+        {"kb_id": kb_id},
+    )
+
+
 def validate_upload(filename: str, size: int, chunk_size: int, overlap: int) -> None:
     suffix = Path(filename).suffix.lower()
     if suffix not in SUPPORTED_EXT:
@@ -155,6 +170,11 @@ def run_ingest_job(
                 doc_id=doc_id,
                 force=force,
             )
+        if result.status in {"created", "updated"}:
+            from app.db.mysql import session_scope
+
+            with session_scope() as db:
+                bump_kb_versions(db, kb_id, corpus=True, index=True)
         logger.info(
             "入库完成 doc=%s 文件=%s 状态=%s 条=%d 子块=%d 耗时=%dms",
             result.doc_id,
@@ -227,15 +247,16 @@ def update_chunk_content(session: Session, chunk_id: str, content: str) -> dict:
     session.execute(
         text("UPDATE document_chunks SET in_milvus = 1 WHERE id = :cid"), {"cid": chunk_id}
     )
+    bump_kb_versions(session, row["kb_id"], corpus=True, index=True)
     return {"chunk_id": chunk_id, "char_count": len(content)}
 
 
 def disable_chunk(session: Session, chunk_id: str) -> None:
     """删除块：软删 MySQL + 物理删向量（检索侧不再命中）。"""
-    existed = session.execute(
-        text("SELECT id FROM document_chunks WHERE id = :cid"), {"cid": chunk_id}
-    ).scalar()
-    if existed is None:
+    row = session.execute(
+        text("SELECT id, kb_id FROM document_chunks WHERE id = :cid"), {"cid": chunk_id}
+    ).mappings().first()
+    if row is None:
         raise LookupError("块不存在")
     session.execute(
         text("UPDATE document_chunks SET is_enabled = 0, in_milvus = 0 WHERE id = :cid"),
@@ -245,6 +266,7 @@ def disable_chunk(session: Session, chunk_id: str) -> None:
     from app.db.milvus_client import get_milvus_db_client
 
     delete_chunk_vector(get_milvus_db_client(), settings.milvus_collection, chunk_id)
+    bump_kb_versions(session, row["kb_id"], corpus=True, index=True)
 
 
 def delete_document(session: Session, doc_id: str) -> None:
@@ -259,6 +281,7 @@ def delete_document(session: Session, doc_id: str) -> None:
     delete_document_vectors(get_milvus_db_client(), settings.milvus_collection, doc_id)
     session.execute(text("DELETE FROM documents WHERE id = :id"), {"id": doc_id})
     refresh_kb_counts(session, row["kb_id"])
+    bump_kb_versions(session, row["kb_id"], corpus=True, index=True)
 
 
 def delete_knowledge_base(session: Session, kb_id: str) -> dict:
