@@ -230,7 +230,8 @@ def resolve_access_scope(
         data = dict(row)
         is_public = bool(data.get("is_public", 1))
         kb_tenant = data.get("tenant_id") or DEFAULT_TENANT
-        if not is_public and kb_tenant != tenant_id:
+        # 匿名用户只能看公共库；私库必须同租户（且已登录）。
+        if not is_public and (user is None or kb_tenant != tenant_id):
             continue
         grants.append(
             KbGrant(

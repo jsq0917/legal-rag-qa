@@ -11,13 +11,21 @@ from pathlib import Path
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, Query, UploadFile
 from pydantic import BaseModel, Field
-from sqlalchemy import text
+from sqlalchemy import bindparam, text
 from sqlalchemy.orm import Session
 
-from app.core.errors import ConflictError, NotFoundError, RateLimited, ValidationFailed
+from app.core.access import AccessScope, ROLE_ADMIN, ROLE_EDITOR
+from app.core.errors import (
+    ConflictError,
+    NotFoundError,
+    PermissionDenied,
+    RateLimited,
+    ValidationFailed,
+)
 from app.core.logger import get_logger
-from app.core.metrics import record_rate_limited
+from app.core.metrics import record_permission_denied, record_rate_limited
 from app.core.security import get_current_user
+from app.api.deps import get_access_scope
 from app.db.mysql import get_db
 from app.ingest.gate import get_ingest_gate
 from app.ingest.loaders import detect_file_type
@@ -53,19 +61,28 @@ class KbCreate(BaseModel):
     id: str = Field(min_length=2, max_length=32, pattern=r"^[a-z0-9_]+$")
     name: str = Field(min_length=1, max_length=64)
     description: str | None = Field(default=None, max_length=255)
+    is_public: bool = Field(default=False, description="公共库仅管理员可建")
 
 
 @router.get("/kbs", summary="知识库列表（含文档数/块数）")
-def list_kbs(db: Session = Depends(get_db)) -> list[dict]:
+def list_kbs(
+    db: Session = Depends(get_db),
+    scope: AccessScope = Depends(get_access_scope),
+) -> list[dict]:
+    allowed = list(scope.kb_ids)
+    if not allowed:
+        return []
     rows = db.execute(
         text(
-            "SELECT id, name, description, embedding_model, doc_count, chunk_count, updated_at "
-            "FROM knowledge_bases ORDER BY id"
-        )
+            "SELECT id, name, description, embedding_model, doc_count, chunk_count, "
+            "is_public, updated_at FROM knowledge_bases WHERE id IN :ids ORDER BY id"
+        ).bindparams(bindparam("ids", expanding=True)),
+        {"ids": allowed},
     ).mappings().all()
     return [
         {
             **dict(r),
+            "is_public": bool(r.get("is_public", 0)),
             "updated_at": r["updated_at"].isoformat(sep=" ", timespec="seconds") if r["updated_at"] else None,
         }
         for r in rows
@@ -73,7 +90,17 @@ def list_kbs(db: Session = Depends(get_db)) -> list[dict]:
 
 
 @router.post("/kbs", status_code=201, summary="新建知识库")
-def create_kb(payload: KbCreate, db: Session = Depends(get_db)) -> dict:
+def create_kb(
+    payload: KbCreate,
+    db: Session = Depends(get_db),
+    scope: AccessScope = Depends(get_access_scope),
+) -> dict:
+    if scope.role not in (ROLE_EDITOR, ROLE_ADMIN):
+        record_permission_denied("kb_create")
+        raise PermissionDenied("当前角色无权创建知识库")
+    if payload.is_public and scope.role != ROLE_ADMIN:
+        record_permission_denied("kb_public")
+        raise PermissionDenied("只有管理员可以创建公共知识库")
     exists = db.execute(
         text("SELECT 1 FROM knowledge_bases WHERE id = :id OR name = :name"),
         {"id": payload.id, "name": payload.name},
@@ -82,22 +109,35 @@ def create_kb(payload: KbCreate, db: Session = Depends(get_db)) -> dict:
         raise ConflictError("知识库 id 或名称已存在")
     db.execute(
         text(
-            "INSERT INTO knowledge_bases (id, name, description, embedding_model) "
-            "VALUES (:id, :name, :description, 'bge-m3')"
+            "INSERT INTO knowledge_bases "
+            "(id, name, description, embedding_model, tenant_id, owner_id, is_public) "
+            "VALUES (:id, :name, :description, 'bge-m3', :tenant_id, :owner_id, :is_public)"
         ),
-        {"id": payload.id, "name": payload.name, "description": payload.description},
+        {
+            "id": payload.id,
+            "name": payload.name,
+            "description": payload.description,
+            "tenant_id": scope.tenant_id,
+            "owner_id": scope.user_id,
+            "is_public": 1 if payload.is_public else 0,
+        },
     )
     db.commit()
-    return {"id": payload.id, "name": payload.name}
+    return {"id": payload.id, "name": payload.name, "is_public": payload.is_public}
 
 
 @router.delete("/kbs/{kb_id}", summary="删除知识库（含文档、块、向量与源文件）")
-def remove_kb(kb_id: str, db: Session = Depends(get_db)) -> dict:
+def remove_kb(
+    kb_id: str,
+    db: Session = Depends(get_db),
+    scope: AccessScope = Depends(get_access_scope),
+) -> dict:
     """删除整个知识库。
 
     删除前必须由前端二次确认（这是不可恢复操作）；后端额外拒绝了"还有文档在解析"
     的请求，避免后台任务写回已被删掉的行。
     """
+    _require_kb_scope(scope, kb_id, write=True)
     try:
         result = delete_knowledge_base(db, kb_id)
     except LookupError as exc:
@@ -114,8 +154,12 @@ def remove_kb(kb_id: str, db: Session = Depends(get_db)) -> dict:
 # 文档
 # ---------------------------------------------------------------------------
 @router.get("/kbs/{kb_id}/documents", summary="文档列表")
-def list_documents(kb_id: str, db: Session = Depends(get_db)) -> list[dict]:
-    _require_kb(db, kb_id)
+def list_documents(
+    kb_id: str,
+    db: Session = Depends(get_db),
+    scope: AccessScope = Depends(get_access_scope),
+) -> list[dict]:
+    _require_kb_scope(scope, kb_id)
     rows = db.execute(
         text(
             "SELECT id, filename, file_type, file_size, status, progress, error_msg, "
@@ -144,8 +188,9 @@ async def upload_documents(
     overlap: int = Form(50),
     retrieval_mode: str = Form("hybrid"),
     db: Session = Depends(get_db),
+    scope: AccessScope = Depends(get_access_scope),
 ) -> dict:
-    _require_kb(db, kb_id)
+    _require_kb_scope(scope, kb_id, write=True)
     if retrieval_mode not in {"dense", "hybrid"}:
         raise ValidationFailed("retrieval_mode 只能是 dense 或 hybrid")
 
@@ -207,7 +252,11 @@ async def upload_documents(
 
 
 @router.get("/documents/{doc_id}", summary="文档详情")
-def get_document(doc_id: str, db: Session = Depends(get_db)) -> dict:
+def get_document(
+    doc_id: str,
+    db: Session = Depends(get_db),
+    scope: AccessScope = Depends(get_access_scope),
+) -> dict:
     row = db.execute(
         text(
             "SELECT id, kb_id, filename, file_type, file_size, status, progress, error_msg, "
@@ -216,7 +265,7 @@ def get_document(doc_id: str, db: Session = Depends(get_db)) -> dict:
         ),
         {"id": doc_id},
     ).mappings().first()
-    if row is None:
+    if row is None or not scope.can_read(row["kb_id"]):
         raise NotFoundError("文档不存在")
     data = dict(row)
     if isinstance(data.get("parse_config"), str):
@@ -234,7 +283,12 @@ def get_document(doc_id: str, db: Session = Depends(get_db)) -> dict:
 
 
 @router.delete("/documents/{doc_id}", summary="删除文档（含向量）")
-def remove_document(doc_id: str, db: Session = Depends(get_db)) -> dict:
+def remove_document(
+    doc_id: str,
+    db: Session = Depends(get_db),
+    scope: AccessScope = Depends(get_access_scope),
+) -> dict:
+    _require_doc_scope(db, doc_id, scope, write=True)
     try:
         delete_document_service(db, doc_id)
     except LookupError as exc:
@@ -244,13 +298,21 @@ def remove_document(doc_id: str, db: Session = Depends(get_db)) -> dict:
 
 
 @router.post("/documents/{doc_id}/reingest", status_code=202, summary="重新解析（源文件缺失则报错）")
-def reingest_document(doc_id: str, background: BackgroundTasks, db: Session = Depends(get_db)) -> dict:
+def reingest_document(
+    doc_id: str,
+    background: BackgroundTasks,
+    db: Session = Depends(get_db),
+    scope: AccessScope = Depends(get_access_scope),
+) -> dict:
     row = db.execute(
         text("SELECT kb_id, storage_path, parse_config FROM documents WHERE id = :id"),
         {"id": doc_id},
     ).mappings().first()
-    if row is None:
+    if row is None or not scope.can_read(row["kb_id"]):
         raise NotFoundError("文档不存在")
+    if not scope.can_write(row["kb_id"]):
+        record_permission_denied("document_reingest")
+        raise PermissionDenied("无权修改该文档所属知识库")
     path = _resolve(row["storage_path"])
     if path is None or not path.exists():
         raise NotFoundError("源文件已不存在，请重新上传")
@@ -300,9 +362,9 @@ def list_chunks(
     q: str | None = Query(None, max_length=64),
     chunk_type: str | None = Query(None, pattern="^(parent|child)$"),
     db: Session = Depends(get_db),
+    scope: AccessScope = Depends(get_access_scope),
 ) -> dict:
-    if db.execute(text("SELECT 1 FROM documents WHERE id = :id"), {"id": doc_id}).scalar() is None:
-        raise NotFoundError("文档不存在")
+    _require_doc_scope(db, doc_id, scope)
 
     where = ["doc_id = :doc_id"]
     params: dict = {"doc_id": doc_id, "limit": limit, "offset": offset}
@@ -333,7 +395,13 @@ class ChunkUpdate(BaseModel):
 
 
 @router.patch("/chunks/{chunk_id}", summary="编辑块（触发重新向量化）")
-def patch_chunk(chunk_id: str, payload: ChunkUpdate, db: Session = Depends(get_db)) -> dict:
+def patch_chunk(
+    chunk_id: str,
+    payload: ChunkUpdate,
+    db: Session = Depends(get_db),
+    scope: AccessScope = Depends(get_access_scope),
+) -> dict:
+    _require_chunk_scope(db, chunk_id, scope, write=True)
     try:
         result = update_chunk_content(db, chunk_id, payload.content.strip())
     except LookupError as exc:
@@ -343,7 +411,12 @@ def patch_chunk(chunk_id: str, payload: ChunkUpdate, db: Session = Depends(get_d
 
 
 @router.delete("/chunks/{chunk_id}", summary="删除块（软删 + 删向量）")
-def remove_chunk(chunk_id: str, db: Session = Depends(get_db)) -> dict:
+def remove_chunk(
+    chunk_id: str,
+    db: Session = Depends(get_db),
+    scope: AccessScope = Depends(get_access_scope),
+) -> dict:
+    _require_chunk_scope(db, chunk_id, scope, write=True)
     try:
         disable_chunk(db, chunk_id)
     except LookupError as exc:
@@ -355,9 +428,48 @@ def remove_chunk(chunk_id: str, db: Session = Depends(get_db)) -> dict:
 # ---------------------------------------------------------------------------
 # 工具
 # ---------------------------------------------------------------------------
-def _require_kb(db: Session, kb_id: str) -> None:
-    if db.execute(text("SELECT 1 FROM knowledge_bases WHERE id = :id"), {"id": kb_id}).scalar() is None:
-        raise NotFoundError(f"知识库 {kb_id} 不存在")
+def _require_kb_scope(scope: AccessScope, kb_id: str, *, write: bool = False) -> None:
+    """不可见 → 404；可见但只读 → 403。两类错误不暴露资源是否存在以外的信息。"""
+    if not scope.allows_kb(kb_id):
+        raise NotFoundError("知识库不存在")
+    if write and not scope.can_write(kb_id):
+        record_permission_denied("kb_write")
+        raise PermissionDenied("无权修改该知识库")
+
+
+def _require_doc_scope(
+    db: Session,
+    doc_id: str,
+    scope: AccessScope,
+    *,
+    write: bool = False,
+) -> str:
+    row = db.execute(
+        text("SELECT kb_id FROM documents WHERE id = :id"), {"id": doc_id}
+    ).mappings().first()
+    if row is None or not scope.can_read(row["kb_id"]):
+        raise NotFoundError("文档不存在")
+    if write and not scope.can_write(row["kb_id"]):
+        record_permission_denied("document_write")
+        raise PermissionDenied("无权修改该文档所属知识库")
+    return str(row["kb_id"])
+
+
+def _require_chunk_scope(
+    db: Session,
+    chunk_id: str,
+    scope: AccessScope,
+    *,
+    write: bool = False,
+) -> None:
+    row = db.execute(
+        text("SELECT kb_id FROM document_chunks WHERE id = :id"), {"id": chunk_id}
+    ).mappings().first()
+    if row is None or not scope.can_read(row["kb_id"]):
+        raise NotFoundError("块不存在")
+    if write and not scope.can_write(row["kb_id"]):
+        record_permission_denied("chunk_write")
+        raise PermissionDenied("无权修改该块所属知识库")
 
 
 def _iso(value) -> str | None:
@@ -386,11 +498,15 @@ def ingest_local(
     overlap: int = Query(50),
     force: bool = Query(False),
     db: Session = Depends(get_db),
+    scope: AccessScope = Depends(get_access_scope),
 ) -> dict:
-    _require_kb(db, kb_id)
+    _require_kb_scope(scope, kb_id, write=True)
+    # 只允许 data/raw 下的裸文件名：阻断 ../ 路径穿越读取任意文件
+    if Path(filename).name != filename or filename.startswith("."):
+        raise ValidationFailed("filename 只能是 data/raw 下的文件名")
     path = BASE_DIR / "data" / "raw" / filename
     if not path.exists():
-        raise NotFoundError(f"文件不存在：{filename}")
+        raise NotFoundError("文件不存在")
     result = ingest_file(path, kb_id=kb_id, chunk_size=chunk_size, overlap=overlap, force=force)
     return {
         "doc_id": result.doc_id,

@@ -23,6 +23,8 @@ from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from app.api.deps import get_access_scope
+from app.core.access import AccessScope
 from app.core.errors import NotFoundError
 from app.core.ids import new_ulid
 from app.core.logger import get_logger
@@ -147,7 +149,11 @@ def create_session(
     payload: SessionCreate,
     user: CurrentUser = Depends(get_current_user),
     db: Session = Depends(get_db),
+    scope: AccessScope = Depends(get_access_scope),
 ) -> SessionOut:
+    kb_ids = scope.restrict(payload.kb_ids)
+    if scope.has_grants and payload.kb_ids and not kb_ids:
+        raise NotFoundError("知识库不存在")
     session_id = new_ulid()
     db.execute(
         text(
@@ -159,7 +165,7 @@ def create_session(
             "id": session_id,
             "uid": user.id,
             "title": payload.title.strip() or "新对话",
-            "kb_ids": json.dumps(payload.kb_ids, ensure_ascii=False),
+            "kb_ids": json.dumps(kb_ids, ensure_ascii=False),
             "model": payload.model,
             "temperature": payload.temperature,
             "top_p": payload.top_p,
@@ -178,8 +184,14 @@ def update_session(
     payload: SessionUpdate,
     user: CurrentUser = Depends(get_current_user),
     db: Session = Depends(get_db),
+    scope: AccessScope = Depends(get_access_scope),
 ) -> SessionOut:
     get_owned_session(db, session_id, user.id)  # 归属校验（404）
+    if payload.kb_ids is not None:
+        allowed = scope.restrict(payload.kb_ids)
+        if scope.has_grants and payload.kb_ids and not allowed:
+            raise NotFoundError("知识库不存在")
+        payload = payload.model_copy(update={"kb_ids": allowed})
 
     fields: list[str] = []
     params: dict[str, Any] = {"sid": session_id, "uid": user.id}

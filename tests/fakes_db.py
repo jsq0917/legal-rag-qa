@@ -165,6 +165,19 @@ class FakeDB:
         if low.startswith("select id, username, password_hash, status from users"):
             rows = [u for u in self.users if u["username"] == p.get("u")]
             return _Result(rows)
+        if low.startswith("select id, username, status, tenant_id, role from users"):
+            rows = [
+                {
+                    "id": u["id"],
+                    "username": u["username"],
+                    "status": u["status"],
+                    "tenant_id": u.get("tenant_id", "default"),
+                    "role": u.get("role", "editor"),
+                }
+                for u in self.users
+                if u["id"] == p.get("id")
+            ]
+            return _Result(rows)
         if low.startswith("select id, username, status from users"):
             rows = [u for u in self.users if u["id"] == p.get("id")]
             return _Result(rows)
@@ -247,7 +260,9 @@ class FakeDB:
                 ]
             )
         if low.startswith("select id, name, description") and "from knowledge_bases" in low:
-            return _Result(self.kbs)
+            ids = p.get("ids")
+            rows = self.kbs if not ids else [k for k in self.kbs if k["id"] in ids]
+            return _Result(rows)
         if low.startswith("select 1 from knowledge_bases"):
             return _Result([{"id": 1}]) if any(k["id"] == p.get("id") for k in self.kbs) else _Result([])
         if "insert into knowledge_bases" in low:
@@ -262,9 +277,9 @@ class FakeDB:
                     "updated_at": _now(),
                     "corpus_version": 1,
                     "index_version": 1,
-                    "is_public": 0,
-                    "tenant_id": "default",
-                    "owner_id": 1,
+                    "is_public": p.get("is_public", 0),
+                    "tenant_id": p.get("tenant_id", "default"),
+                    "owner_id": p.get("owner_id", 1),
                 }
             )
             return _Result()
@@ -295,6 +310,8 @@ class FakeDB:
         if low.startswith("select id, kb_id, filename") and "from documents" in low:
             rows = [d for d in self.docs if d["id"] == p.get("id")]
             return _Result(rows)
+        if low.startswith("select kb_id from documents where id"):
+            return _Result([d for d in self.docs if d["id"] == p.get("id")])
         if low.startswith("select 1 from documents"):
             return _Result([{"id": 1}]) if any(d["id"] == p.get("id") for d in self.docs) else _Result([])
         if low.startswith("select kb_id, storage_path, parse_config from documents"):
@@ -304,6 +321,8 @@ class FakeDB:
         # ---- document_chunks ----
         if low.startswith("select count(*) from document_chunks"):
             return _Result(scalar=len(self.chunks))
+        if low.startswith("select kb_id from document_chunks where id"):
+            return _Result([c for c in self.chunks if c["id"] == p.get("id")])
         if low.startswith("select id from document_chunks where kb_id"):
             return _Result([c for c in self.chunks if c.get("kb_id") == p.get("kb_id")])
         if "from document_chunks" in low and "where doc_id" in low:

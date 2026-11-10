@@ -260,7 +260,7 @@ def retrieve(
 
     hits = hybrid.dedupe_by_parent(candidates, topk=resolved_topk)
     if expand_parent and hits:
-        _attach_parents(hits, as_of=as_of)
+        _attach_parents(hits, as_of=as_of, kb_ids=kb_ids)
 
     elapsed = int((time.perf_counter() - started) * 1000)
     logger.info(
@@ -300,8 +300,17 @@ def retrieve(
     )
 
 
-def _attach_parents(hits: list[Hit], *, as_of: int = 0) -> None:
-    """按 parent_id 批量回表取整条法条 + 时效元信息，必要时兜底过滤失效条。"""
+def _attach_parents(
+    hits: list[Hit],
+    *,
+    as_of: int = 0,
+    kb_ids: list[str] | None = None,
+) -> None:
+    """按 parent_id 批量回表取整条法条 + 时效元信息，必要时兜底过滤失效条。
+
+    ``kb_ids`` 非空时，回表 SQL 也带 kb 条件：即使向量过滤被绕过，也不会把
+    其他知识库/租户的正文取回来。
+    """
     parent_ids = [h.parent_id or h.chunk_id for h in hits]
     from app.db.mysql import get_engine
 
@@ -309,9 +318,17 @@ def _attach_parents(hits: list[Hit], *, as_of: int = 0) -> None:
         "SELECT id, content, effective_from, effective_to, version FROM document_chunks "
         "WHERE id IN :ids AND chunk_type = 'parent' AND is_enabled = 1"
     ).bindparams(bindparam("ids", expanding=True))
+    params: dict = {"ids": parent_ids}
+    if kb_ids:
+        stmt = text(
+            "SELECT id, content, effective_from, effective_to, version FROM document_chunks "
+            "WHERE id IN :ids AND kb_id IN :kbs "
+            "AND chunk_type = 'parent' AND is_enabled = 1"
+        ).bindparams(bindparam("ids", expanding=True), bindparam("kbs", expanding=True))
+        params = {"ids": parent_ids, "kbs": list(kb_ids)}
     try:
         with get_engine().connect() as conn:
-            rows = conn.execute(stmt, {"ids": parent_ids}).fetchall()
+            rows = conn.execute(stmt, params).fetchall()
     except Exception as exc:  # noqa: BLE001 - 回表失败不应让整次检索失败
         logger.warning("父块回表失败，降级使用子块正文：%s", exc)
         return

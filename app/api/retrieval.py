@@ -11,6 +11,10 @@ from typing import Literal
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
+from app.api.deps import get_access_scope
+from app.core.access import AccessScope
+from app.core.errors import NotFoundError
+from app.core.metrics import record_permission_denied
 from app.core.ratelimit import rate_limit_dep
 from app.core.security import CurrentUser, get_current_user
 from app.retrieval.service import retrieve
@@ -32,10 +36,17 @@ class PreviewRequest(BaseModel):
 
 
 @router.post("/retrieval/preview", summary="检索预览（含融合分与重排分）")
-def preview(payload: PreviewRequest) -> dict:
+def preview(
+    payload: PreviewRequest,
+    scope: AccessScope = Depends(get_access_scope),
+) -> dict:
+    allowed = scope.restrict(payload.kb_ids)
+    if scope.has_grants and not allowed:
+        record_permission_denied("retrieval_preview")
+        raise NotFoundError("知识库不存在")
     result = retrieve(
         payload.question,
-        kb_ids=payload.kb_ids,
+        kb_ids=allowed or None,
         complexity=payload.complexity,
         topk=payload.topk,
         mode=payload.mode,
@@ -53,6 +64,7 @@ def preview(payload: PreviewRequest) -> dict:
         "hits": [
             {
                 "chunk_id": h.chunk_id,
+                "kb_id": h.kb_id,
                 "law_name": h.law_name,
                 "article_no": h.article_no,
                 "chapter_path": h.chapter_path,

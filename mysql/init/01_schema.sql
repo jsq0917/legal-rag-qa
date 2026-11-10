@@ -21,6 +21,8 @@ CREATE TABLE IF NOT EXISTS users (
     id            BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键',
     username      VARCHAR(64)     NOT NULL                COMMENT '账号名（3-32 位字母数字下划线）',
     password_hash VARCHAR(100)    NOT NULL                COMMENT 'bcrypt 哈希（自带盐，不单独存 salt）',
+    tenant_id     VARCHAR(32)     NOT NULL DEFAULT 'default' COMMENT '租户隔离键',
+    role          ENUM('admin','editor','viewer') NOT NULL DEFAULT 'editor' COMMENT 'admin 管理 / editor 编辑 / viewer 只读',
     status        TINYINT         NOT NULL DEFAULT 1      COMMENT '1 正常 0 禁用',
     last_login_at DATETIME(3)     NULL                     COMMENT '最近登录时间',
     created_at    DATETIME(3)     NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
@@ -37,6 +39,9 @@ CREATE TABLE IF NOT EXISTS knowledge_bases (
     name            VARCHAR(64)  NOT NULL                COMMENT '展示名，如 劳动法知识库',
     description     VARCHAR(255) NULL,
     embedding_model VARCHAR(64)  NOT NULL DEFAULT 'bge-m3',
+    tenant_id       VARCHAR(32)  NOT NULL DEFAULT 'default' COMMENT '归属租户',
+    owner_id        BIGINT UNSIGNED NULL                 COMMENT '创建者；种子库为 NULL',
+    is_public       TINYINT(1)   NOT NULL DEFAULT 1      COMMENT '1 公共库（跨租户可读）',
     doc_count       INT          NOT NULL DEFAULT 0      COMMENT '冗余计数，列表页免 count',
     chunk_count     INT          NOT NULL DEFAULT 0,
     corpus_version  BIGINT UNSIGNED NOT NULL DEFAULT 1   COMMENT '语料版本：增删改/重建即 +1，缓存按此失效',
@@ -45,7 +50,8 @@ CREATE TABLE IF NOT EXISTS knowledge_bases (
     created_at      DATETIME(3)  NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     updated_at      DATETIME(3)  NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
     PRIMARY KEY (id),
-    UNIQUE KEY uk_name (name)
+    UNIQUE KEY uk_name (name),
+    KEY idx_tenant_public (tenant_id, is_public)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_0900_ai_ci COMMENT = '知识库';
 
 -- ---------------------------------------------------------------------------

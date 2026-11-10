@@ -41,6 +41,8 @@ _HTTP_DURATION_COUNT: dict[tuple[str, str], int] = defaultdict(int)
 _LLM_CALLS: dict[tuple[str, str], int] = defaultdict(int)
 #: reason -> count
 _RATE_LIMITED: dict[str, int] = defaultdict(int)
+#: resource -> count（越权拒绝；不含具体资源 id，避免日志/指标泄露）
+_PERMISSION_DENIED: dict[str, int] = defaultdict(int)
 
 DEPENDENCY_NAMES = ("mysql", "redis", "milvus")
 _DEP_TIMEOUT_S = 2.0
@@ -74,6 +76,12 @@ def record_rate_limited(reason: str) -> None:
     """``reason``：chat（问答限流）/ ingest（解析队列满）。"""
     with _LOCK:
         _RATE_LIMITED[reason] += 1
+
+
+def record_permission_denied(resource: str) -> None:
+    """``resource``：kb_write / document_write / chunk_write / debug_preview 等。"""
+    with _LOCK:
+        _PERMISSION_DENIED[resource or "unknown"] += 1
 
 
 # ---------------------------------------------------------------------------
@@ -255,6 +263,7 @@ def render_prometheus(
         duration_count = dict(_HTTP_DURATION_COUNT)
         llm_calls = dict(_LLM_CALLS)
         rate_limited = dict(_RATE_LIMITED)
+        permission_denied = dict(_PERMISSION_DENIED)
 
     lines: list[str] = []
     _family(lines, "lawanswer_http_requests_total", "counter", "HTTP requests by method, route and status.")
@@ -287,6 +296,17 @@ def render_prometheus(
     _family(lines, "lawanswer_rate_limited_total", "counter", "Rejected requests by reason (chat rate limit / ingest queue).")
     for reason, count in sorted(rate_limited.items()):
         lines.append(f"lawanswer_rate_limited_total{_labels({'reason': reason})} {count}")
+
+    _family(
+        lines,
+        "lawanswer_permission_denied_total",
+        "counter",
+        "Rejected resource operations by resource type (no ids, no titles).",
+    )
+    for resource, count in sorted(permission_denied.items()):
+        lines.append(
+            f"lawanswer_permission_denied_total{_labels({'resource': resource})} {count}"
+        )
 
     if dependencies is not None:
         _family(lines, "lawanswer_dependency_up", "gauge", "Dependency health (1=ok, 0=down).")
@@ -335,6 +355,7 @@ def reset_metrics() -> None:
         _HTTP_DURATION_COUNT.clear()
         _LLM_CALLS.clear()
         _RATE_LIMITED.clear()
+        _PERMISSION_DENIED.clear()
     with _dep_lock:
         _dep_cached = {}
         _dep_cached_at = 0.0

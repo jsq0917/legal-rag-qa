@@ -18,7 +18,25 @@ from tests.fakes_db import FakeDB, override_deps
 
 @pytest.fixture
 def db():
-    return FakeDB()
+    fake = FakeDB()
+    # 会话默认勾选两个种子库；FakeDB 默认只造了一个，这里补齐第二个
+    fake.kbs.append(
+        {
+            "id": "kb_civil",
+            "name": "民法典知识库",
+            "description": "民法典",
+            "embedding_model": "bge-m3",
+            "doc_count": 0,
+            "chunk_count": 0,
+            "updated_at": fake.kbs[0]["updated_at"],
+            "corpus_version": 1,
+            "index_version": 1,
+            "is_public": 1,
+            "tenant_id": "default",
+            "owner_id": None,
+        }
+    )
+    return fake
 
 
 @pytest.fixture

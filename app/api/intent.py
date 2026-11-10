@@ -11,6 +11,10 @@ from typing import Literal
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
+from app.api.deps import get_access_scope
+from app.core.access import AccessScope
+from app.core.errors import NotFoundError
+from app.core.metrics import record_permission_denied
 from app.core.ratelimit import rate_limit_dep
 from app.core.security import CurrentUser, get_current_user
 from app.orchestration.service import analyze_query
@@ -43,11 +47,19 @@ class IntentPreviewResponse(BaseModel):
     response_model=IntentPreviewResponse,
     summary="意图识别与路由预览（含问答库判定）",
 )
-def preview(payload: IntentPreviewRequest) -> IntentPreviewResponse:
+def preview(
+    payload: IntentPreviewRequest,
+    scope: AccessScope = Depends(get_access_scope),
+) -> IntentPreviewResponse:
+    allowed = scope.restrict(payload.kb_ids)
+    if scope.has_grants and not allowed:
+        record_permission_denied("intent_preview")
+        raise NotFoundError("知识库不存在")
     plan = analyze_query(
         payload.query,
         history=payload.history or None,
-        selected_kb_ids=payload.kb_ids,
+        selected_kb_ids=allowed,
+        scope=scope,
     )
     data = plan.to_dict()
     return IntentPreviewResponse(**data)

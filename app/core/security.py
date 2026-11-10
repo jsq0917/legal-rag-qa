@@ -59,7 +59,12 @@ class CurrentUser:
     role: str = "editor"
 
     def to_dict(self) -> dict:
-        return {"id": self.id, "username": self.username}
+        return {
+            "id": self.id,
+            "username": self.username,
+            "tenant_id": self.tenant_id,
+            "role": self.role,
+        }
 
 
 # ---------------------------------------------------------------------------
@@ -152,13 +157,31 @@ def _extract_bearer(request: Request) -> str | None:
 
 
 def _load_user(db: Session, user_id: int) -> CurrentUser | None:
-    row = db.execute(
-        text("SELECT id, username, status FROM users WHERE id = :id"),
-        {"id": user_id},
-    ).mappings().first()
+    try:
+        row = db.execute(
+            text("SELECT id, username, status, tenant_id, role FROM users WHERE id = :id"),
+            {"id": user_id},
+        ).mappings().first()
+    except Exception:
+        # 迁移未执行时退回旧列集；角色按最小可用权限（只读）处理，避免误放权。
+        row = db.execute(
+            text("SELECT id, username, status FROM users WHERE id = :id"),
+            {"id": user_id},
+        ).mappings().first()
+        if row is None:
+            return None
+        return CurrentUser(
+            id=int(row["id"]), username=row["username"], status=int(row["status"]), role="viewer"
+        )
     if row is None:
         return None
-    return CurrentUser(id=int(row["id"]), username=row["username"], status=int(row["status"]))
+    return CurrentUser(
+        id=int(row["id"]),
+        username=row["username"],
+        status=int(row["status"]),
+        tenant_id=str(row.get("tenant_id") or "default"),
+        role=str(row.get("role") or "viewer"),
+    )
 
 
 def get_current_user(request: Request, db: Session = Depends(get_db)) -> CurrentUser:
