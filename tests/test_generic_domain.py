@@ -7,7 +7,9 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 
+from app.core.access import AccessScope, KbGrant
 from app.domain_profiles import (
     GENERIC,
     LEGAL,
@@ -17,6 +19,7 @@ from app.domain_profiles import (
     profile_for_kb,
     profile_for_kbs,
 )
+from app.generation.context import build_context_sources
 from app.generation.prompts import ContextSource, build_messages
 from app.ingest.pipeline import prepare
 from app.orchestration.models import IntentResult
@@ -139,3 +142,61 @@ def test_mixed_selection_keeps_both_citation_styles():
     prompt = get_profile(MIXED).system_prompt
     assert "《法名》第X条" in prompt
     assert "《资料标题》·章节/小节" in prompt
+
+
+def test_context_sources_follow_kb_domain():
+    generic_hit = SimpleNamespace(
+        kb_id="kb_generic",
+        law_name="Nova 便携净化器说明书",
+        chapter_path="滤芯更换",
+        article_no="第九条",  # 即便检索层带了条号，产品库也不展示
+        content="红灯常亮时更换滤芯。",
+        parent_content="",
+        rerank_score=None,
+        score=0.8,
+        chunk_id="c1",
+        effective_from="2020-01-01",
+        effective_to="",
+        version=2,
+    )
+    legal_hit = SimpleNamespace(
+        kb_id="kb_labor",
+        law_name="中华人民共和国劳动合同法",
+        chapter_path="第四章",
+        article_no="第三十九条",
+        content="劳动者有下列情形之一的，用人单位可以解除劳动合同。",
+        parent_content="",
+        rerank_score=None,
+        score=0.9,
+        chunk_id="c2",
+        effective_from="2013-07-01",
+        effective_to="",
+        version=1,
+    )
+    generic, legal = build_context_sources(hits=[generic_hit, legal_hit])
+    assert generic.domain == "generic" and generic.kind == "section"
+    assert generic.article_no == ""
+    assert generic.title == "《Nova 便携净化器说明书》·滤芯更换"
+    assert legal.domain == "legal" and legal.kind == "law"
+    assert legal.article_no == "第三十九条"
+    assert "施行" in legal.title
+
+
+def test_generic_kb_scope_and_cache_isolated():
+    generic = AccessScope.for_grants(
+        [KbGrant(kb_id="kb_generic", is_public=True)],
+        tenant_id="t1",
+        user_id=1,
+        role="viewer",
+    )
+    legal = AccessScope.for_grants(
+        [KbGrant(kb_id="kb_labor", is_public=True)],
+        tenant_id="t1",
+        user_id=1,
+        role="viewer",
+    )
+    # 客户端多传法律库也不能扩大可见范围
+    assert generic.restrict(["kb_generic", "kb_labor"]) == ["kb_generic"]
+    assert generic.allows_kb("kb_generic") and not generic.allows_kb("kb_labor")
+    # 不同知识库的缓存标识互不相同
+    assert generic.cache_token() != legal.cache_token()
