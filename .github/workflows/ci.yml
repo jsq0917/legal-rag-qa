@@ -67,6 +67,7 @@ jobs:
         run: >
           uv run --no-sync python -m pytest -q
           tests/test_permission_matrix.py
+          tests/test_security_boundary.py
           tests/test_answer_cache.py
           tests/test_sse.py
           tests/test_injection_defense.py
