@@ -76,6 +76,53 @@ def _patch_recognize(monkeypatch, client):
     monkeypatch.setattr(intent_mod, "get_intent_client", lambda settings=None: client)
 
 
+class TestSelectedKbIsolation:
+    """客户端勾选的库必须真正收敛，不能用缓存/兜底扩回其他库。"""
+
+    def test_exact_cache_hit_ignored_when_selected_kb_mismatch(self, monkeypatch):
+        from types import SimpleNamespace
+
+        qa = FakeQARetriever()
+        qa.exact_hit = SimpleNamespace(
+            id="qa_1",
+            kb_id="kb_labor",
+            intent="labor_law",
+            category="试用期",
+        )
+        _patch_recognize(
+            monkeypatch,
+            FakeIntentClient(_structured_json(law_hints=["中华人民共和国劳动合同法"])),
+        )
+        plan = analyze_query(
+            "试用期最长可以约定多久？",
+            selected_kb_ids=["kb_not_exist"],
+            qa_retriever=qa,
+        )
+        assert plan.qa.hit is None
+        assert plan.route.route == "no_data"
+        assert plan.route.kb_ids == []
+
+    def test_scope_drops_unknown_selection_without_falling_back(self, monkeypatch):
+        from app.core.access import AccessScope, KbGrant
+
+        scope = AccessScope.for_grants(
+            [KbGrant(kb_id="kb_labor")], tenant_id="t1", user_id=1, role="editor"
+        )
+        _patch_recognize(
+            monkeypatch,
+            FakeIntentClient(_structured_json(law_hints=["中华人民共和国劳动合同法"])),
+        )
+        plan = analyze_query(
+            "试用期最长可以约定多久？",
+            selected_kb_ids=["kb_not_exist"],
+            qa_retriever=FakeQARetriever(),
+            scope=scope,
+        )
+        assert plan.route.route == "no_data"
+        assert plan.route.kb_ids == []
+        assert "kb_labor" not in plan.route.kb_ids
+
+
 class TestStructuredFlow:
     def test_pure_structured_never_touches_milvus(self, monkeypatch):
         """验收标准：纯结构化问题不产生 Milvus 调用。"""

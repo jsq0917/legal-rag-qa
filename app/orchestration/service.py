@@ -92,14 +92,39 @@ def analyze_query(
     s = settings or get_settings()
     query = (query or "").strip()
     started = time.perf_counter()
+    requested_kb_ids = list(selected_kb_ids or [])
     if scope is not None:
         # 客户端勾选只能缩小范围，不能扩大权限
         selected_kb_ids = scope.restrict(selected_kb_ids)
+        if requested_kb_ids and not selected_kb_ids:
+            # 明确勾选了库但全部不存在/不在授权范围：不回落全库，直接引导
+            elapsed_ms = int((time.perf_counter() - started) * 1000)
+            return QueryPlan(
+                query=query,
+                intent=IntentResult(
+                    intent="other",
+                    rewrite_type="direct",
+                    sub_queries=[query] if query else [],
+                    complexity="simple",
+                    source="selection",
+                ),
+                route=RouteDecision(
+                    route="no_data",
+                    kb_ids=[],
+                    reason="所选知识库不存在或不在授权范围",
+                ),
+                qa=QALookupResult(),
+                sub_queries=[query] if query else [],
+                elapsed_ms=elapsed_ms,
+            )
 
     # 0) 缓存前置：先查 Redis 精确缓存（0.1ms 级），命中就直接走 pure_structured，
     #    跳过 LLM 意图识别（~1s）。高频问题 TTFT 从 ~2s 砍到 ~0.1s。
     qa_retriever = qa_retriever or get_qa_retriever()
     exact_hit = qa_retriever.lookup_exact(query, scope=scope)
+    if exact_hit is not None and requested_kb_ids and exact_hit.kb_id and exact_hit.kb_id not in requested_kb_ids:
+        # 客户端勾选的库不含该问答所属库：不能跨库回放标准答案
+        exact_hit = None
     if exact_hit is not None:
         elapsed_ms = int((time.perf_counter() - started) * 1000)
         # 构造伪意图结果：标记 source="cache"，不调 LLM
@@ -169,7 +194,12 @@ def analyze_query(
 
     # 路由兜底收敛：cross_law 等分支会返回 ALL_KB_IDS，必须再按授权范围裁剪。
     if scope is not None and scope.has_grants:
-        final_route = replace(final_route, kb_ids=scope.restrict(final_route.kb_ids) or list(scope.kb_ids))
+        restricted = scope.restrict(final_route.kb_ids)
+        if requested_kb_ids and not restricted:
+            # 明确勾选的库都不可用时，不能借兜底扩回全库
+            final_route = replace(final_route, kb_ids=[])
+        else:
+            final_route = replace(final_route, kb_ids=restricted or list(scope.kb_ids))
 
     sub_queries = list(intent_result.sub_queries) or ([query] if query else [])
     elapsed_ms = int((time.perf_counter() - started) * 1000)
