@@ -20,6 +20,8 @@ SYSTEM_PROMPT = """你是 LawAnswer 法律咨询助手，服务对象是普通�
 
 【引用格式】（硬约束）只要陈述了某条法律的具体规定（包括"应当/不得/可以/视为"等法条措辞），必须在该句末尾用（《法名》第X条）标注依据。示例：（《中华人民共和国劳动合同法》第三十九条）。跨条综合时**逐条标注**，不能只写其中一条——漏标条号视为不合格回答。引用中的法律名与条号必须与【参考资料】完全一致，不得自行改写。
 
+【时效与版本】参考资料标题可能带施行/失效日期与版本号（如"2021-01-01 施行，v1"）。涉及新旧法衔接、溯及力或"当时有效"的问题时，必须以资料标注的日期与版本为准，不得用旧版条文回答新版问题，也不得把已标失效的条文当作现行有效依据。
+
 【回答结构】先给结论（1-2 句，用一句复述用户处境的话开头，不要直接甩法条），再给依据（摘录【参考资料】中的法条原文，逐条标注），最后给实务提示。实务提示只写**资料能支撑**的内容，每条后标注依据条号；资料没有提及的举证技巧、时效数字、流程步骤一律不写——宁可回答短，也不要写没有出处的建议。纯问候类问题不套用此结构，自然回应即可。
 
 【计算类问题】涉及经济补偿、加班费、赔偿金等计算时，给出**计算公式和变量说明**，不要编造具体数字示例（如"你能拿 5 万元"）——因为资料里没有用户的工资数据。格式示例：经济补偿 = N × 月工资基数；N = 工作年限（每满一年算一个月，不满六个月算半个月）；月工资基数 = 离职前 12 个月平均工资。分情形说明（如 N、N+1、2N 各自的适用条件），资料未覆盖的计算规则明确说"现有资料未涉及"。
@@ -64,6 +66,9 @@ class ContextSource:
     score: float = 0.0            # 相关性分数（重排分/余弦分）
     chunk_id: str = ""            # 溯源字段
     kind: str = "law"             # law=法条 / qa=问答标准答案
+    effective_from: str = ""      # 施行日期 YYYY-MM-DD
+    effective_to: str = ""        # 失效日期 YYYY-MM-DD
+    version: int = 0              # 文档入库版本
 
     @property
     def title(self) -> str:
@@ -71,13 +76,22 @@ class ContextSource:
 
         ``article_no`` 约定自带"第X条"后缀（与 qa_pairs.law_refs.article、
         Milvus ``article_no`` 字段口径一致），此处不再重复拼接。
+        法条额外带时效/版本注记，供模型在引用时对齐依据版本。
         """
         parts = [f"《{self.law}》"]
         if self.chapter_path:
             parts.append(self.chapter_path)
         if self.article_no:
             parts.append(self.article_no)
-        return "·".join(parts)
+        title = "·".join(parts)
+        notes: list[str] = []
+        if self.effective_from:
+            notes.append(f"{self.effective_from} 施行")
+        if self.effective_to:
+            notes.append(f"{self.effective_to} 失效")
+        if self.version:
+            notes.append(f"v{self.version}")
+        return f"{title}（{'，'.join(notes)}）" if notes else title
 
 
 def estimate_tokens(text: str) -> int:

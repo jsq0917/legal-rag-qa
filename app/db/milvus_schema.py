@@ -59,6 +59,9 @@ FIELD_SPECS: tuple[FieldSpec, ...] = (
     FieldSpec("char_count", "INT32", description="字符数"),
     FieldSpec("doc_sha1", "VARCHAR", max_length=40, description="内容版本号"),
     FieldSpec("updated_at", "INT64", description="毫秒时间戳"),
+    FieldSpec("effective_from", "INT64", description="施行日期 YYYYMMDD，0=未知"),
+    FieldSpec("effective_to", "INT64", description="失效日期 YYYYMMDD，0=长期有效"),
+    FieldSpec("version", "INT32", description="文档入库版本"),
     FieldSpec(DENSE_FIELD, "FLOAT_VECTOR", dim=DENSE_DIM, description="bge-m3 稠密向量"),
     FieldSpec(SPARSE_FIELD, "SPARSE_FLOAT_VECTOR", description="bge-m3 稀疏向量（learned lexical weights）"),
 )

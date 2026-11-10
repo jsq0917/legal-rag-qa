@@ -16,6 +16,7 @@ import re
 from dataclasses import dataclass, field
 
 from app.ingest.embedder import Embedding
+from app.ingest.versioning import int_to_date
 
 DENSE_FIELD = "dense_vector"
 SPARSE_FIELD = "sparse_vector"
@@ -36,6 +37,9 @@ OUTPUT_FIELDS = [
     "chapter_path",
     "law_name",
     "source_file",
+    "effective_from",
+    "effective_to",
+    "version",
 ]
 
 #: 查询时 HNSW 的搜索宽度（比默认 16 高，保证 2k 规模下召回接近 1）
@@ -59,6 +63,10 @@ class Hit:
     score: float = 0.0
     rerank_score: float | None = None
     parent_content: str = ""
+    #: 时效元信息（YYYY-MM-DD，空=未知）与文档入库版本
+    effective_from: str = ""
+    effective_to: str = ""
+    version: int = 0
 
     @property
     def embed_text(self) -> str:
@@ -95,7 +103,12 @@ def build_kb_filter(kb_ids: list[str] | None) -> str:
     return f"kb_id in [{quoted}]"
 
 
-def build_filter(kb_ids: list[str] | None = None, law_hints: list[str] | None = None) -> str:
+def build_filter(
+    kb_ids: list[str] | None = None,
+    law_hints: list[str] | None = None,
+    *,
+    effective_as_of: int = 0,
+) -> str:
     """拼接 Milvus 过滤表达式：知识库 + 法域。
 
     法域过滤是本轮针对"两部劳动法术语高度重叠"加的：稀疏路按词项召回时，
@@ -111,6 +124,11 @@ def build_filter(kb_ids: list[str] | None = None, law_hints: list[str] | None = 
     if law_hints:
         quoted = ", ".join(f'"{law}"' for law in law_hints)
         parts.append(f"law_name in [{quoted}]")
+    if effective_as_of > 0:
+        # 0 表示"未知/长期有效"：老数据没有日期时不过度过滤，避免整库消失。
+        as_of = int(effective_as_of)
+        parts.append(f"(effective_from == 0 or effective_from <= {as_of})")
+        parts.append(f"(effective_to == 0 or effective_to >= {as_of})")
     return " and ".join(parts)
 
 
@@ -130,6 +148,9 @@ def to_hit(raw) -> Hit:
         law_name=entity.get("law_name", ""),
         source_file=entity.get("source_file", ""),
         score=float(distance or 0.0),
+        effective_from=int_to_date(entity.get("effective_from")),
+        effective_to=int_to_date(entity.get("effective_to")),
+        version=int(entity.get("version") or 0),
     )
 
 
@@ -188,6 +209,7 @@ def search(
     sparse_weight: float = 0.25,
     law_hints: list[str] | None = None,
     sparse_pool_ratio: float = 1.0,
+    effective_as_of: int = 0,
 ) -> list[Hit]:
     """执行检索并融合。返回按融合分降序的候选（未重排）。
 
@@ -197,7 +219,7 @@ def search(
     """
     from pymilvus import RRFRanker, WeightedRanker
 
-    expr = build_filter(kb_ids, law_hints)
+    expr = build_filter(kb_ids, law_hints, effective_as_of=effective_as_of)
     requests = build_requests(
         embedding, pool=pool, expr=expr, mode=mode, sparse_pool_ratio=sparse_pool_ratio
     )

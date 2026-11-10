@@ -316,6 +316,10 @@ class Settings(BaseSettings):
     retrieval_ref_expansion: bool = Field(default=True)
     retrieval_ref_max_sources: int = Field(default=3, ge=1, le=10)
     retrieval_ref_max_added: int = Field(default=3, ge=1, le=10)
+    # 法条时效（task 3）：检索时按 as_of 过滤未生效/已失效条文。
+    # as_of 留空 = 今天；格式 YYYY-MM-DD。老数据 effective_from/to=0 不过滤。
+    retrieval_filter_expired: bool = Field(default=True)
+    retrieval_effective_as_of: str = Field(default="")
     qa_similarity_threshold: float = Field(default=0.90, ge=0.0, le=1.0)
     qa_bm25_topn: int = Field(default=3, ge=1, le=20)
     cache_qa_ttl: int = Field(default=604800, ge=60)

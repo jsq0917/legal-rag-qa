@@ -76,6 +76,10 @@ class Chunk:
     title: str
     content: str
     char_count: int
+    #: 法条时效（YYYY-MM-DD，空串=未知）；version 为文档入库版本
+    effective_from: str = ""
+    effective_to: str = ""
+    version: int = 1
 
     @property
     def embed_text(self) -> str:

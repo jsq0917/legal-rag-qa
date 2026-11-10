@@ -20,6 +20,7 @@ from sqlalchemy import text
 
 from app.ingest.normalize import cn_to_int
 from app.ingest.structure import law_name_from_filename
+from app.ingest.versioning import date_to_int
 from app.retrieval.hybrid import Hit
 
 logger = logging.getLogger(__name__)
@@ -64,6 +65,9 @@ class ParentArticle:
     chapter_path: str
     law_name: str
     source_file: str
+    effective_from: str = ""
+    effective_to: str = ""
+    version: int = 0
 
 
 def normalize_law_name(name: str) -> str:
@@ -148,7 +152,8 @@ def _load_rows(settings) -> list[ParentArticle]:
 
     stmt = text(
         "SELECT c.id, c.parent_id, c.kb_id, c.doc_id, c.content, c.title, "
-        "c.article_no, c.chapter_path, d.filename "
+        "c.article_no, c.chapter_path, d.filename, "
+        "c.effective_from, c.effective_to, c.version "
         "FROM document_chunks c JOIN documents d ON d.id = c.doc_id "
         "WHERE c.chunk_type = 'parent' AND c.is_enabled = 1"
     )
@@ -169,6 +174,9 @@ def _load_rows(settings) -> list[ParentArticle]:
                 chapter_path=row[7] or "",
                 law_name=law_name_from_filename(filename) if filename else "",
                 source_file=filename,
+                effective_from=str(row[9] or ""),
+                effective_to=str(row[10] or ""),
+                version=int(row[11] or 0),
             )
         )
     return out
@@ -211,6 +219,9 @@ def _row_to_hit(row: ParentArticle, *, seed: Hit) -> Hit:
         score=seed.score * 0.99,
         rerank_score=None,
         parent_content=row.content,
+        effective_from=row.effective_from,
+        effective_to=row.effective_to,
+        version=row.version,
     )
 
 
@@ -221,6 +232,7 @@ def expand_hits_with_refs(
     kb_ids: list[str] | None = None,
     max_sources: int = 3,
     max_added: int = 3,
+    as_of: int = 0,
     index: ArticleIndex | None = None,
     settings=None,
 ) -> tuple[list[Hit], int]:
@@ -255,6 +267,11 @@ def expand_hits_with_refs(
                 continue
             if allowed_kbs is not None and row.kb_id not in allowed_kbs:
                 continue
+            if as_of:
+                start = date_to_int(row.effective_from)
+                end = date_to_int(row.effective_to)
+                if (start and start > as_of) or (end and end < as_of):
+                    continue
             out.append(_row_to_hit(row, seed=hit))
             used.add(row.parent_id)
             added += 1

@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 
 from app.ingest.embedder import Embedding, embeddings_to_milvus
 from app.ingest.models import Chunk
+from app.ingest.versioning import date_to_int
 
 MILVUS_BATCH = 256
 
@@ -35,7 +36,8 @@ def now_ms() -> int:
 def get_document_by_sha1(session: Session, kb_id: str, content_sha1: str) -> dict | None:
     row = session.execute(
         text(
-            "SELECT id, status, parse_config, article_count, chunk_count "
+            "SELECT id, status, parse_config, article_count, chunk_count, version, "
+            "effective_from, effective_to "
             "FROM documents WHERE kb_id = :kb_id AND content_sha1 = :sha1"
         ),
         {"kb_id": kb_id, "sha1": content_sha1},
@@ -59,10 +61,12 @@ def upsert_document(session: Session, document: dict) -> None:
             """
             INSERT INTO documents
                 (id, kb_id, filename, file_type, file_size, content_sha1, file_sha1,
-                 storage_path, status, progress, parse_config, article_count, chunk_count, version)
+                 storage_path, status, progress, parse_config, article_count, chunk_count,
+                 version, effective_from, effective_to)
             VALUES
                 (:id, :kb_id, :filename, :file_type, :file_size, :content_sha1, :file_sha1,
-                 :storage_path, :status, :progress, :parse_config, :article_count, :chunk_count, :version)
+                 :storage_path, :status, :progress, :parse_config, :article_count, :chunk_count,
+                 :version, :effective_from, :effective_to)
             ON DUPLICATE KEY UPDATE
                 -- content_sha1 必须一起更新：上传接口先落 pending 行（占位 sha1），
                 -- 真实内容算出后若不回写，去重（uk_kb_content）与"内容未变跳过"全部失效
@@ -78,6 +82,8 @@ def upsert_document(session: Session, document: dict) -> None:
                 article_count = VALUES(article_count),
                 chunk_count = VALUES(chunk_count),
                 version = VALUES(version),
+                effective_from = VALUES(effective_from),
+                effective_to = VALUES(effective_to),
                 error_msg = NULL
             """
         ),
@@ -138,6 +144,9 @@ def insert_chunks(session: Session, chunks: Sequence[Chunk]) -> None:
             "title": c.title,
             "content": c.content,
             "char_count": c.char_count,
+            "effective_from": c.effective_from or None,
+            "effective_to": c.effective_to or None,
+            "version": c.version,
         }
         for c in chunks
     ]
@@ -146,10 +155,12 @@ def insert_chunks(session: Session, chunks: Sequence[Chunk]) -> None:
             """
             INSERT INTO document_chunks
                 (id, doc_id, kb_id, parent_id, chunk_type, chunk_index,
-                 article_no, chapter_path, title, content, char_count)
+                 article_no, chapter_path, title, content, char_count,
+                 effective_from, effective_to, version)
             VALUES
                 (:id, :doc_id, :kb_id, :parent_id, :chunk_type, :chunk_index,
-                 :article_no, :chapter_path, :title, :content, :char_count)
+                 :article_no, :chapter_path, :title, :content, :char_count,
+                 :effective_from, :effective_to, :version)
             """
         ),
         payload,
@@ -233,6 +244,9 @@ def chunk_to_entity(
         "char_count": chunk.char_count,
         "doc_sha1": doc_sha1,
         "updated_at": now_ms(),
+        "effective_from": date_to_int(chunk.effective_from),
+        "effective_to": date_to_int(chunk.effective_to),
+        "version": int(chunk.version),
     }
     entity.update(embeddings_to_milvus(embedding))
     return entity

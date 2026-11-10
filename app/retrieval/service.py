@@ -20,12 +20,14 @@ from __future__ import annotations
 
 import time
 from concurrent.futures import ThreadPoolExecutor
+from datetime import date
 from typing import Sequence
 
 from sqlalchemy import bindparam, text
 
 from app.core.logger import get_logger
 from app.ingest.embedder import Embedder, get_embedder
+from app.ingest.versioning import date_to_int, normalize_date
 from app.retrieval import hybrid, refs
 from app.retrieval.hybrid import Hit, RetrievalResult
 from app.retrieval.rerank import Reranker, get_reranker
@@ -61,6 +63,34 @@ def resolve_mode(
     if route == "cross_law" or len(law_hints or []) > 1:
         return "hybrid"
     return "dense"
+
+
+#: collection 是否已加时效字段（老 collection 没有时跳过 Milvus 过滤，
+#: 由 MySQL 回表兜底，避免过滤表达式直接报错）
+_EFFECTIVE_SUPPORT: dict[str, bool] = {}
+
+
+def _as_of_int(settings: Settings) -> int:
+    """当前检索基准日（YYYYMMDD）；关闭过滤返回 0。"""
+    if not getattr(settings, "retrieval_filter_expired", False):
+        return 0
+    value = normalize_date(getattr(settings, "retrieval_effective_as_of", "")) or date.today().isoformat()
+    return date_to_int(value)
+
+
+def _supports_effective_fields(client, collection: str) -> bool:
+    if collection in _EFFECTIVE_SUPPORT:
+        return _EFFECTIVE_SUPPORT[collection]
+    try:
+        desc = client.describe_collection(collection_name=collection)
+        names = {field.get("name") for field in (desc.get("fields") or [])}
+        supported = {"effective_from", "effective_to"} <= names
+    except Exception:  # noqa: BLE001 - 探测失败按不支持处理，走 MySQL 兜底
+        supported = False
+    if not supported:
+        logger.warning("Milvus collection 缺少时效字段，本次跳过向量侧时效过滤（请执行迁移脚本）")
+    _EFFECTIVE_SUPPORT[collection] = supported
+    return supported
 
 
 def _rerank_candidates(hits: list[Hit], question: str, reranker) -> list[Hit]:
@@ -129,6 +159,11 @@ def retrieve(
     embedder = embedder or get_embedder()
     client = client or _default_client()
 
+    # 时效过滤基准日；老 collection 没有字段时降级为 MySQL 回表过滤。
+    as_of = _as_of_int(s)
+    if as_of and not _supports_effective_fields(client, collection):
+        as_of = 0
+
     embedding = embedder.encode([question])[0]
     candidates = hybrid.search(
         client,
@@ -143,6 +178,7 @@ def retrieve(
         sparse_weight=s.retrieval.sparse_weight,
         law_hints=hints,
         sparse_pool_ratio=getattr(s, "retrieval_sparse_pool_ratio", 1.0),
+        effective_as_of=as_of,
     )
     dense_hits = len(candidates)
 
@@ -178,6 +214,7 @@ def retrieve(
                     sparse_weight=s.retrieval.sparse_weight,
                     law_hints=hints,
                     sparse_pool_ratio=getattr(s, "retrieval_sparse_pool_ratio", 1.0),
+                    effective_as_of=as_of,
                 )
                 if rescue:
                     rescue = _rerank_candidates(rescue, question, reranker)
@@ -211,6 +248,7 @@ def retrieve(
                 sparse_weight=s.retrieval.sparse_weight,
                 law_hints=None,
                 sparse_pool_ratio=getattr(s, "retrieval_sparse_pool_ratio", 1.0),
+                effective_as_of=as_of,
             )
             if rescue:
                 rescue = _rerank_candidates(rescue, question, reranker)
@@ -222,7 +260,7 @@ def retrieve(
 
     hits = hybrid.dedupe_by_parent(candidates, topk=resolved_topk)
     if expand_parent and hits:
-        _attach_parents(hits)
+        _attach_parents(hits, as_of=as_of)
 
     elapsed = int((time.perf_counter() - started) * 1000)
     logger.info(
@@ -257,17 +295,18 @@ def retrieve(
             "mode": effective_mode,
             "mode_requested": mode,
             "mode_rescued": rescued_mode,
+            "effective_as_of": as_of,
         },
     )
 
 
-def _attach_parents(hits: list[Hit]) -> None:
-    """按 parent_id 批量回表取整条法条，避免 N 次查询。"""
+def _attach_parents(hits: list[Hit], *, as_of: int = 0) -> None:
+    """按 parent_id 批量回表取整条法条 + 时效元信息，必要时兜底过滤失效条。"""
     parent_ids = [h.parent_id or h.chunk_id for h in hits]
     from app.db.mysql import get_engine
 
     stmt = text(
-        "SELECT id, content FROM document_chunks "
+        "SELECT id, content, effective_from, effective_to, version FROM document_chunks "
         "WHERE id IN :ids AND chunk_type = 'parent' AND is_enabled = 1"
     ).bindparams(bindparam("ids", expanding=True))
     try:
@@ -276,9 +315,22 @@ def _attach_parents(hits: list[Hit]) -> None:
     except Exception as exc:  # noqa: BLE001 - 回表失败不应让整次检索失败
         logger.warning("父块回表失败，降级使用子块正文：%s", exc)
         return
-    contents = {row[0]: row[1] for row in rows}
+    meta = {
+        row[0]: (row[1], str(row[2] or ""), str(row[3] or ""), int(row[4] or 0))
+        for row in rows
+    }
+    kept: list[Hit] = []
     for hit in hits:
-        hit.parent_content = contents.get(hit.parent_id or hit.chunk_id, "")
+        row = meta.get(hit.parent_id or hit.chunk_id)
+        if row:
+            hit.parent_content, hit.effective_from, hit.effective_to, hit.version = row
+        # 显式 as_of 时按日期兜底；老数据（日期为空）视为有效，不过度过滤。
+        start = date_to_int(hit.effective_from)
+        end = date_to_int(hit.effective_to)
+        if as_of and ((start and start > as_of) or (end and end < as_of)):
+            continue
+        kept.append(hit)
+    hits[:] = kept
 
 
 def _default_client():
@@ -409,6 +461,7 @@ def retrieve_multi(
             kb_ids=kb_ids,
             max_sources=getattr(s, "retrieval_ref_max_sources", 3),
             max_added=getattr(s, "retrieval_ref_max_added", 3),
+            as_of=_as_of_int(s),
             settings=s,
         )
 

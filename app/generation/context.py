@@ -38,6 +38,9 @@ class SourceRef:
     snippet: str
     chunk_id: str = ""
     kind: str = "law"  # law=法条 / qa=问答标准答案
+    effective_from: str = ""
+    effective_to: str = ""
+    version: int = 0
 
     def to_dict(self) -> dict:
         return {
@@ -48,6 +51,9 @@ class SourceRef:
             "snippet": self.snippet,
             "chunk_id": self.chunk_id,
             "kind": self.kind,
+            "effective_from": self.effective_from,
+            "effective_to": self.effective_to,
+            "version": self.version,
         }
 
 
@@ -110,6 +116,9 @@ def sources_from_hits(hits: Sequence | None) -> list[SourceRef]:
                 snippet=_snippet(h.parent_content or h.content),
                 chunk_id=h.chunk_id,
                 kind="law",
+                effective_from=getattr(h, "effective_from", ""),
+                effective_to=getattr(h, "effective_to", ""),
+                version=getattr(h, "version", 0),
             )
         )
     return out
@@ -183,6 +192,9 @@ def build_context_sources(
                 score=h.rerank_score if h.rerank_score is not None else h.score,
                 chunk_id=h.chunk_id,
                 kind="law",
+                effective_from=getattr(h, "effective_from", ""),
+                effective_to=getattr(h, "effective_to", ""),
+                version=getattr(h, "version", 0),
             )
         )
     return out

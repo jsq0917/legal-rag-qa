@@ -34,6 +34,7 @@ from app.ingest.loaders import load_document
 from app.ingest.models import Chunk, ParsedDocument
 from app.ingest.normalize import normalize_text
 from app.ingest.structure import law_name_from_filename, parse_law, validate_article_sequence
+from app.ingest.versioning import extract_effective_from, normalize_date
 from app.ingest.writer import (
     chunk_to_entity,
     delete_chunks,
@@ -88,6 +89,9 @@ class PreparedIngest:
     doc: ParsedDocument
     chunks: list[Chunk]
     parse_config: dict
+    #: 从正文末条"自 XXXX 年 X 月 X 日起施行"读出；读不到留空
+    effective_from: str = ""
+    effective_to: str = ""
 
     @property
     def parents(self) -> list[Chunk]:
@@ -171,11 +175,27 @@ def prepare(
             "overlap": overlap,
             "retrieval_mode": retrieval_mode,
         },
+        effective_from=extract_effective_from(doc.text),
+        effective_to="",
     )
 
 
-def rebind_ids(prepared: PreparedIngest, *, doc_id: str, kb_id: str) -> PreparedIngest:
-    """把分块里的占位 id 换成真实 doc_id / kb_id。"""
+def rebind_ids(
+    prepared: PreparedIngest,
+    *,
+    doc_id: str,
+    kb_id: str,
+    effective_from: str | None = None,
+    effective_to: str | None = None,
+    version: int = 1,
+) -> PreparedIngest:
+    """把分块里的占位 id 换成真实 doc_id / kb_id，并写入时效/版本。
+
+    时效与版本取决于"是否重建、库里已有值"，prepare 阶段还不确定，
+    因此在 ingest 时统一回填到每个块（父块与子块口径一致）。
+    """
+    starts = prepared.effective_from if effective_from is None else effective_from
+    ends = prepared.effective_to if effective_to is None else effective_to
     rebinded: list[Chunk] = []
     for chunk in prepared.chunks:
         new_parent = chunk.parent_id.replace("PENDING", doc_id)
@@ -192,6 +212,9 @@ def rebind_ids(prepared: PreparedIngest, *, doc_id: str, kb_id: str) -> Prepared
                 title=chunk.title,
                 content=chunk.content,
                 char_count=chunk.char_count,
+                effective_from=starts,
+                effective_to=ends,
+                version=version,
             )
         )
     return PreparedIngest(
@@ -203,6 +226,8 @@ def rebind_ids(prepared: PreparedIngest, *, doc_id: str, kb_id: str) -> Prepared
         doc=prepared.doc,
         chunks=rebinded,
         parse_config=prepared.parse_config,
+        effective_from=starts,
+        effective_to=ends,
     )
 
 
@@ -265,8 +290,23 @@ def ingest(
         # 上传接口会预生成 doc_id（先落一条 pending 行给前端轮询），此处沿用
         doc_id = existing["id"] if existing else (doc_id or new_id())
         rebuild = existing is not None
-        bound = rebind_ids(prepared, doc_id=doc_id, kb_id=kb_id)
         version = int(existing.get("version") or 1) + 1 if rebuild else 1
+
+        # 时效：正文能读到时以正文为准；读不到则保留库里已有值（人工维护的
+        # 废止日期尤其不能被重建覆盖）。effective_to 目前正文不产出，靠人工补。
+        def _existing_date(key: str) -> str:
+            return normalize_date(str(existing.get(key) or "")) if existing else ""
+
+        effective_from = prepared.effective_from or _existing_date("effective_from")
+        effective_to = prepared.effective_to or _existing_date("effective_to")
+        bound = rebind_ids(
+            prepared,
+            doc_id=doc_id,
+            kb_id=kb_id,
+            effective_from=effective_from,
+            effective_to=effective_to,
+            version=version,
+        )
 
         # prepared.source_file 是磁盘上的存储名（上传时带随机前缀），
         # 展示名与存储路径必须沿用库里已有的值：上传文件在 data/uploads/ 下，
@@ -289,6 +329,8 @@ def ingest(
                 "article_count": len(bound.doc.articles),
                 "chunk_count": len(bound.children),
                 "version": version,
+                "effective_from": effective_from or None,
+                "effective_to": effective_to or None,
             },
         )
         job_id = new_id()
