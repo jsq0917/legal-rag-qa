@@ -17,6 +17,7 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.core.logger import current_request_id, get_logger
+from app.security.guardrails import redact_sensitive
 
 logger = get_logger("lawanswer.error")
 
@@ -85,11 +86,24 @@ class UpstreamError(AppError):
     message = "上游服务不可用"
 
 
+def _redact_value(value: Any) -> Any:
+    """错误响应递归脱敏：异常消息/详情里可能夹带路径、连接串或密钥。"""
+    if isinstance(value, str):
+        return redact_sensitive(value)[0]
+    if isinstance(value, list):
+        return [_redact_value(item) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_redact_value(item) for item in value)
+    if isinstance(value, dict):
+        return {key: _redact_value(item) for key, item in value.items()}
+    return value
+
+
 def _envelope(code: str, message: str, detail: Any = None) -> dict[str, Any]:
     return {
         "code": code,
-        "message": message,
-        "detail": detail,
+        "message": _redact_value(str(message)),
+        "detail": _redact_value(detail),
         "request_id": current_request_id(),
     }
 

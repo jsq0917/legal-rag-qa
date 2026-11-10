@@ -18,6 +18,7 @@ from app.core.metrics import record_permission_denied
 from app.core.ratelimit import rate_limit_dep
 from app.core.security import CurrentUser, get_current_user
 from app.retrieval.service import retrieve
+from app.security.guardrails import safe_source_file
 
 router = APIRouter(
     prefix="/api",
@@ -73,7 +74,8 @@ def preview(
                 "rerank_score": None if h.rerank_score is None else round(h.rerank_score, 4),
                 "content": h.content,
                 "parent_content": h.parent_content,
-                "source_file": h.source_file,
+                # 调试接口也不回传服务器路径/随机前缀，只给 basename
+                "source_file": safe_source_file(h.source_file),
             }
             for h in result.hits
         ],

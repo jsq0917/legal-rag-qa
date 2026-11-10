@@ -30,8 +30,10 @@ from typing import Any, Callable, Iterator, Sequence
 
 from app.core.access import AccessScope, answer_identity
 from app.core.logger import get_logger
+from app.core.metrics import record_guardrail_hit
 from app.core.sse import sse_frame
 from app.core.trace import Trace
+from app.security.guardrails import redact_sensitive
 from app.generation.context import (
     aggregate_sources,
     build_context_sources,
@@ -78,6 +80,8 @@ class StreamResult:
     citation_check_ms: int = 0
     #: 降级原因（如 ``llm_fallback:<model>``）；正常为 None
     degraded: str | None = None
+    #: 输出护栏命中的敏感信息类别（如 api_key/internal_path/system_prompt）
+    guardrail_hits: list[str] = field(default_factory=list)
 
 
 def _meta_frame(
@@ -382,6 +386,13 @@ class AnswerEngine:
                 degraded=result.degraded or "",
                 error=result.error or "",
             )
+            if result.guardrail_hits:
+                trace.record(
+                    "guardrail",
+                    latency_ms=0,
+                    hits=sorted(set(result.guardrail_hits)),
+                    count=len(result.guardrail_hits),
+                )
             trace.record(
                 "citation_check",
                 latency_ms=result.citation_check_ms,
@@ -410,7 +421,12 @@ class AnswerEngine:
             result.error = f"stream_interrupted: {exc}"
             logger.warning("生成断流，保留已产出 %d 字", len(exc.partial))
             yield sse_frame(
-                "error", {"code": "stream_interrupted", "message": str(exc)[:200], "retriable": True}
+                "error",
+                {
+                    "code": "stream_interrupted",
+                    "message": redact_sensitive(str(exc)[:200])[0],
+                    "retriable": True,
+                },
             )
             yield self._done_frame(result, started, trace.trace_id)
         except ConfigError as exc:
@@ -425,7 +441,14 @@ class AnswerEngine:
             # 第 2 层：重试后仍失败
             result.error = f"llm_error: {exc}"
             logger.warning("生成失败：%s", str(exc)[:200])
-            yield sse_frame("error", {"code": "llm_error", "message": str(exc)[:200], "retriable": True})
+            yield sse_frame(
+                "error",
+                {
+                    "code": "llm_error",
+                    "message": redact_sensitive(str(exc)[:200])[0],
+                    "retriable": True,
+                },
+            )
             yield self._done_frame(result, started, trace.trace_id)
         except Exception as exc:  # noqa: BLE001 - 顶层兜底：链路绝不能裸奔
             result.error = f"internal_error: {exc}"
@@ -574,10 +597,20 @@ class AnswerEngine:
                         result.token_usage = dict(chunk.usage)
                     if not chunk.text:
                         continue
+                    # 输出护栏：逐 chunk 脱敏，密钥/内部路径绝不流到前端
+                    text, leaks = redact_sensitive(chunk.text)
+                    if leaks:
+                        kinds = [hit["kind"] for hit in leaks]
+                        result.guardrail_hits.extend(kinds)
+                        for kind in kinds:
+                            record_guardrail_hit(kind)
+                        logger.warning("输出护栏命中：%s", sorted(set(kinds)))
+                    if not text:
+                        continue
                     if result.ttft_ms is None:
                         result.ttft_ms = int((time.perf_counter() - started) * 1000)
-                    result.content += chunk.text
-                    yield sse_frame("delta", {"text": chunk.text})
+                    result.content += text
+                    yield sse_frame("delta", {"text": text})
             except LLMStreamInterrupted:
                 raise
             except LLMError as exc:

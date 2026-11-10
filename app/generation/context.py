@@ -18,6 +18,7 @@ from typing import Sequence
 
 from app.generation.prompts import ContextSource
 from app.orchestration.qa_cache import QAPair
+from app.security.guardrails import redact_sensitive
 
 #: SSE sources 事件里 snippet 的默认长度
 SNIPPET_CHARS = 120
@@ -67,6 +68,8 @@ class SourceRef:
 
 def _snippet(text: str, limit: int = SNIPPET_CHARS) -> str:
     text = (text or "").strip().replace("\n", " ")
+    # 来源 snippet 也可能带内部路径/密钥（脏文档），出前端前统一脱敏
+    text = redact_sensitive(text)[0]
     return text[:limit] + ("……" if len(text) > limit else "")
 
 

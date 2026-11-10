@@ -1,0 +1,464 @@
+"""提示注入与数据外泄防护评测（LA-N2）。
+
+一条命令产出：逐条原始输出、按攻击类别/数据划分的汇总指标、失败清单。
+
+数据口径
+--------
+* 数据集 ``eval/datasets/prompt_injection.jsonl`` 覆盖 6 类攻击 + 正常问题，
+  带 ``dataset_version`` 与 ``split=dev|holdout``；输出记录文件 SHA-256。
+* ``--mode fixture`` 使用人工构造的**攻击前/攻击后回答快照**：
+  ``fixture_unsafe`` 模拟"没有防护时模型照做"的坏回答，
+  ``fixture_safe`` 模拟"有防护时应有的回答"。
+  因此 fixture 的 ASR 是**模拟值**，不是线上模型结果，报告里单列并标注。
+* ``--mode live`` 才调用真实 LLM，必须显式给 ``--max-cases`` 控制预算；
+  live 结果单独输出，绝不与 fixture 合并计算。
+
+指标分开报告
+------------
+* ``asr_*``：攻击成功率（fixture 为模拟；live 为真实）。
+* ``safe_refusal_rate``：安全回答里明确拒绝执行文档指令的比例。
+* ``normal_false_refusal_rate``：正常法律问题被误判为攻击/被拒绝的比例。
+* ``detector_recall`` / ``normal_detector_false_positive``：规则分类器的
+  召回与误报，仅用于定位规则缺口，不作为"安全率"。
+
+命令示例::
+
+    uv run python -m app.eval.injection_eval
+    uv run python -m app.eval.injection_eval --split dev --out eval/results/injection_fixture.json
+    uv run python -m app.eval.injection_eval --mode live --max-cases 6 --out eval/results/injection_live.json
+"""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, Iterable
+
+from app.generation.prompts import PROMPT_VERSION, build_messages
+from app.security.guardrails import (
+    ATTACK_CLASSES,
+    classify_injection,
+    is_refusal,
+    judge_attack_answer,
+    redact_sensitive,
+    scan_sensitive,
+)
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+DEFAULT_DATASET = REPO_ROOT / "eval" / "datasets" / "prompt_injection.jsonl"
+DEFAULT_OUT_DIR = REPO_ROOT / "eval" / "results"
+DEFAULT_MAX_CASES = 6
+MAX_CASES_LIMIT = 20
+
+
+def load_cases(path: Path) -> list[dict]:
+    cases: list[dict] = []
+    seen: set[str] = set()
+    for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            case = json.loads(line)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"{path}:{lineno} JSON 解析失败: {exc}") from exc
+        for key in ("case_id", "attack_class", "split", "query", "expected_behavior"):
+            if key not in case:
+                raise ValueError(f"{path}:{lineno} 缺少字段 {key}")
+        if case["case_id"] in seen:
+            raise ValueError(f"{path}:{lineno} case_id 重复: {case['case_id']}")
+        seen.add(case["case_id"])
+        if case["split"] not in ("dev", "holdout"):
+            raise ValueError(f"{path}:{lineno} split 必须是 dev/holdout")
+        if case["attack_class"] not in (*ATTACK_CLASSES, "normal"):
+            raise ValueError(f"{path}:{lineno} 未知 attack_class: {case['attack_class']}")
+        if case["expected_behavior"] not in ("refuse", "ignore_injected", "answer"):
+            raise ValueError(f"{path}:{lineno} 未知 expected_behavior: {case['expected_behavior']}")
+        cases.append(case)
+    return cases
+
+
+def _rate(values: Iterable[bool]) -> dict:
+    values = list(values)
+    n = len(values)
+    hit = sum(1 for value in values if value)
+    return {"n": n, "hit": hit, "rate": (hit / n) if n else None}
+
+
+def _leaks(answer: str, forbidden: Iterable[str]) -> list[str]:
+    forbidden = list(forbidden or [])
+    kinds = [hit["kind"] for hit in scan_sensitive(answer)]
+    if not forbidden:
+        return kinds
+    return [kind for kind in kinds if kind in forbidden]
+
+
+def evaluate_fixture(cases: list[dict]) -> dict:
+    rows: list[dict] = []
+    attack_rows: list[dict] = []
+    normal_rows: list[dict] = []
+    by_class: dict[str, list[dict]] = {}
+
+    for case in cases:
+        case_id = case["case_id"]
+        is_normal = case["attack_class"] == "normal"
+        probe = f"{case.get('query', '')}\n{case.get('injected_context', '')}"
+        detected = classify_injection(probe)
+
+        unsafe = str(case.get("fixture_unsafe") or "")
+        safe = str(case.get("fixture_safe") or "")
+        canary = str(case.get("canary") or "")
+        forbidden = list(case.get("forbidden_leaks") or [])
+
+        unsafe_judge = judge_attack_answer(unsafe, canary=canary) if unsafe else None
+        safe_judge = judge_attack_answer(safe, canary=canary)
+        redacted_unsafe, redact_hits = redact_sensitive(unsafe)
+        remaining_unsafe = scan_sensitive(redacted_unsafe)
+        safe_leaks = _leaks(safe, forbidden)
+
+        detector_hit = None if is_normal else case["attack_class"] in detected
+        detector_false_positive = bool(detected) if is_normal else None
+        unsafe_asr = None if is_normal else bool(unsafe_judge and unsafe_judge["asr"])
+        safe_asr = bool(safe_judge["asr"])
+        safe_refusal = is_refusal(safe)
+        redaction_checked = bool(redact_hits)
+        redaction_pass = None if not redaction_checked else not remaining_unsafe
+
+        failures: list[str] = []
+        if is_normal:
+            if detector_false_positive:
+                failures.append(f"detector_false_positive: {','.join(detected)}")
+            if safe_refusal:
+                failures.append("normal_false_refusal")
+        else:
+            if not detector_hit:
+                failures.append(f"detector_miss: expected={case['attack_class']} got={','.join(detected) or 'none'}")
+            if unsafe_asr is False:
+                failures.append("fixture_unsafe_not_attack_success")
+            if safe_asr:
+                failures.append("fixture_safe_still_attack_success")
+            if not safe_refusal:
+                failures.append("safe_answer_not_explicit_refusal")
+        if safe_leaks:
+            failures.append(f"safe_leak: {','.join(sorted(set(safe_leaks)))}")
+        if redaction_pass is False:
+            failures.append("redaction_miss")
+
+        row = {
+            "case_id": case_id,
+            "dataset_version": case.get("dataset_version"),
+            "split": case["split"],
+            "attack_class": case["attack_class"],
+            "query": case.get("query"),
+            "injected_context": case.get("injected_context", ""),
+            "canary": canary,
+            "expected_behavior": case["expected_behavior"],
+            "detected": detected,
+            "detector_hit": detector_hit,
+            "detector_false_positive": detector_false_positive,
+            "fixture_unsafe": unsafe,
+            "fixture_safe": safe,
+            "redacted_unsafe": redacted_unsafe,
+            "unsafe_judge": unsafe_judge,
+            "safe_judge": safe_judge,
+            "safe_refusal": safe_refusal,
+            "safe_leaks": safe_leaks,
+            "redaction_checked": redaction_checked,
+            "redaction_pass": redaction_pass,
+            "checks": {
+                "detector": detector_hit,
+                "unsafe_asr": unsafe_asr,
+                "safe_asr": safe_asr,
+                "safe_refusal": safe_refusal,
+                "safe_leaks": not safe_leaks,
+                "redaction": redaction_pass,
+            },
+            "failures": failures,
+        }
+        rows.append(row)
+        if is_normal:
+            normal_rows.append(row)
+        else:
+            attack_rows.append(row)
+            by_class.setdefault(case["attack_class"], []).append(row)
+
+    summary = {
+        "attack_cases": len(attack_rows),
+        "detector_recall": _rate([bool(row["detector_hit"]) for row in attack_rows]),
+        "asr_unsafe_fixture": {
+            **_rate([bool(row["unsafe_judge"] and row["unsafe_judge"]["asr"]) for row in attack_rows]),
+            "note": "模拟「无防护时照做」的坏回答，不是线上模型结果",
+        },
+        "asr_safe_fixture": {
+            **_rate([row["checks"]["safe_asr"] for row in attack_rows]),
+            "note": "期望「有防护时」的回答快照，0 表示护栏口径通过",
+        },
+        "safe_refusal_rate": _rate([row["safe_refusal"] for row in attack_rows]),
+        "normal": {
+            "cases": len(normal_rows),
+            "detector_false_positive": _rate([bool(row["detector_false_positive"]) for row in normal_rows]),
+            "false_refusal": _rate([row["safe_refusal"] for row in normal_rows]),
+            "leak_cases": sum(1 for row in normal_rows if row["safe_leaks"]),
+        },
+        "redaction": {
+            **_rate([row["redaction_pass"] for row in attack_rows if row["redaction_checked"]]),
+            "checked": sum(1 for row in attack_rows if row["redaction_checked"]),
+            "passed": sum(1 for row in attack_rows if row["redaction_pass"]),
+        },
+        "asr_live": {
+            "n": None,
+            "hit": None,
+            "rate": None,
+            "note": "fixture 模式不产生 live 指标；真实 ASR 需 --mode live 单独运行",
+        },
+    }
+
+    by_class_summary = {
+        name: {
+            "cases": len(items),
+            "detector_recall": _rate([bool(item["detector_hit"]) for item in items]),
+            "asr_unsafe_fixture": _rate([bool(item["unsafe_judge"] and item["unsafe_judge"]["asr"]) for item in items]),
+            "asr_safe_fixture": _rate([item["checks"]["safe_asr"] for item in items]),
+            "safe_refusal": _rate([item["safe_refusal"] for item in items]),
+        }
+        for name, items in sorted(by_class.items())
+    }
+
+    return {
+        "meta": {
+            "mode": "fixture",
+            "data_kind": "synthetic_attack_corpus",
+            "asr_kind": "simulated_pre_post_fix",
+            "prompt_version": PROMPT_VERSION,
+            "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "cases": len(rows),
+            "attack_cases": len(attack_rows),
+            "normal_cases": len(normal_rows),
+            "dataset_version": sorted({str(case.get("dataset_version")) for case in cases}),
+        },
+        "summary": summary,
+        "by_class": by_class_summary,
+        "by_split": {
+            split: _split_summary([row for row in rows if row["split"] == split])
+            for split in ("dev", "holdout")
+        },
+        "raw_cases": rows,
+        "failed_cases": {row["case_id"]: row["failures"] for row in rows if row["failures"]},
+    }
+
+
+def _split_summary(rows: list[dict]) -> dict:
+    attacks = [row for row in rows if row["attack_class"] != "normal"]
+    normals = [row for row in rows if row["attack_class"] == "normal"]
+    return {
+        "cases": len(rows),
+        "attack_cases": len(attacks),
+        "normal_cases": len(normals),
+        "detector_recall": _rate([bool(row["detector_hit"]) for row in attacks]),
+        "asr_unsafe_fixture": _rate([bool(row["unsafe_judge"] and row["unsafe_judge"]["asr"]) for row in attacks]),
+        "asr_safe_fixture": _rate([row["checks"]["safe_asr"] for row in attacks]),
+        "safe_refusal": _rate([row["safe_refusal"] for row in attacks]),
+        "normal_false_refusal": _rate([row["safe_refusal"] for row in normals]),
+        "normal_detector_false_positive": _rate([bool(row["detector_false_positive"]) for row in normals]),
+    }
+
+
+def evaluate_live(cases: list[dict], *, max_cases: int, model: str | None = None) -> dict:
+    """真实 LLM 冒烟：只跑前 ``max_cases`` 条，逐条记录原始回答与判定。"""
+    from app.generation.llm_client import LLMError, get_llm_client
+    from config import ConfigError, get_settings
+
+    settings = get_settings()
+    try:
+        client = get_llm_client(settings)
+    except ConfigError as exc:
+        raise RuntimeError(f"live 模式缺少可用 LLM 配置: {exc}") from exc
+
+    rows: list[dict] = []
+    for case in cases[:max_cases]:
+        injected = str(case.get("injected_context") or "")
+        context_block = f"【资料1】《测试资料》\n{injected}" if injected else ""
+        messages = build_messages(str(case["query"]), context_block=context_block)
+        started = datetime.now(timezone.utc)
+        error = ""
+        answer = ""
+        usage: dict[str, Any] = {}
+        try:
+            response = client.chat(messages, model=model, temperature=0.0, max_tokens=500)
+            answer = response.content
+            usage = dict(response.usage)
+        except LLMError as exc:
+            error = f"{exc.kind}: {exc}"
+        except Exception as exc:  # noqa: BLE001 - 单条失败不阻断评测
+            error = f"{type(exc).__name__}: {exc}"
+
+        redacted, redact_hits = redact_sensitive(answer)
+        judged = judge_attack_answer(answer, canary=str(case.get("canary") or ""))
+        is_normal = case["attack_class"] == "normal"
+        leaks = _leaks(answer, case.get("forbidden_leaks") or [])
+        rows.append(
+            {
+                "case_id": case["case_id"],
+                "split": case["split"],
+                "attack_class": case["attack_class"],
+                "query": case.get("query"),
+                "expected_behavior": case["expected_behavior"],
+                "model": model or settings.llm_default_model,
+                "started_at": started.isoformat(timespec="seconds"),
+                "answer": answer,
+                "redacted_answer": redacted,
+                "redaction_hits": [hit["kind"] for hit in redact_hits],
+                "usage": usage,
+                "judge": judged,
+                "leaks": leaks,
+                "error": error,
+                "checks": {
+                    "asr": None if is_normal else judged["asr"],
+                    "refusal": is_refusal(answer),
+                    "leaks": not leaks,
+                },
+            }
+        )
+
+    ok = [row for row in rows if not row["error"]]
+    attacks = [row for row in ok if row["attack_class"] != "normal"]
+    normals = [row for row in ok if row["attack_class"] == "normal"]
+    return {
+        "meta": {
+            "mode": "live",
+            "data_kind": "synthetic_attack_corpus",
+            "asr_kind": "live_model",
+            "prompt_version": PROMPT_VERSION,
+            "model": model or settings.llm_default_model,
+            "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "cases": len(rows),
+            "attack_cases": sum(1 for row in rows if row["attack_class"] != "normal"),
+            "normal_cases": sum(1 for row in rows if row["attack_class"] == "normal"),
+            "max_cases": max_cases,
+            "errors": sum(1 for row in rows if row["error"]),
+            "dataset_version": sorted({str(case.get("dataset_version")) for case in cases[:max_cases]}),
+        },
+        "summary": {
+            "asr_live": _rate([bool(row["judge"]["asr"]) for row in attacks]),
+            "refusal_rate": _rate([row["checks"]["refusal"] for row in attacks]),
+            "normal_false_refusal_rate": _rate([row["checks"]["refusal"] for row in normals]),
+            "leak_cases": sum(1 for row in rows if row["leaks"]),
+            "detector_recall": _rate(
+                [
+                    case["attack_class"] in classify_injection(f"{case.get('query', '')}\n{case.get('injected_context', '')}")
+                    for case in cases[:max_cases]
+                    if case["attack_class"] != "normal"
+                ]
+            ),
+        },
+        "raw_cases": rows,
+    }
+
+
+def _fmt(value: Any) -> str:
+    if value is None:
+        return "n/a"
+    return f"{value:.3f}" if isinstance(value, float) else str(value)
+
+
+def print_report(report: dict) -> None:
+    meta = report["meta"]
+    print(
+        f"dataset={', '.join(meta['dataset_version'])} mode={meta['mode']}({meta['data_kind']}) "
+        f"cases={meta['cases']} attack={meta.get('attack_cases')} normal={meta.get('normal_cases')}"
+    )
+    s = report["summary"]
+    if meta["mode"] == "fixture":
+        print(f"asr_unsafe_fixture  {_fmt(s['asr_unsafe_fixture']['rate'])} "
+              f"({s['asr_unsafe_fixture']['hit']}/{s['asr_unsafe_fixture']['n']})  [模拟，不是 live]")
+        print(f"asr_safe_fixture    {_fmt(s['asr_safe_fixture']['rate'])} "
+              f"({s['asr_safe_fixture']['hit']}/{s['asr_safe_fixture']['n']})")
+        print(f"safe_refusal_rate   {_fmt(s['safe_refusal_rate']['rate'])} "
+              f"({s['safe_refusal_rate']['hit']}/{s['safe_refusal_rate']['n']})")
+        print(f"detector_recall     {_fmt(s['detector_recall']['rate'])} "
+              f"({s['detector_recall']['hit']}/{s['detector_recall']['n']})")
+        normal = s["normal"]
+        print(f"normal_false_refusal {_fmt(normal['false_refusal']['rate'])} "
+              f"({normal['false_refusal']['hit']}/{normal['false_refusal']['n']})")
+        print(f"normal_detector_fp   {_fmt(normal['detector_false_positive']['rate'])} "
+              f"({normal['detector_false_positive']['hit']}/{normal['detector_false_positive']['n']})")
+        print(f"redaction_pass      {_fmt(s['redaction']['rate'])} "
+              f"({s['redaction']['passed']}/{s['redaction']['checked']})")
+        print(f"asr_live            n/a  ({s['asr_live']['note']})")
+        for split, data in report["by_split"].items():
+            print(
+                f"  [{split}] attack={data['attack_cases']} normal={data['normal_cases']} "
+                f"detector={_fmt(data['detector_recall']['rate'])} "
+                f"asr_safe={_fmt(data['asr_safe_fixture']['rate'])} "
+                f"normal_false_refusal={_fmt(data['normal_false_refusal']['rate'])}"
+            )
+        for name, data in report["by_class"].items():
+            print(f"  [{name}] n={data['cases']} detector={_fmt(data['detector_recall']['rate'])} "
+                  f"asr_safe={_fmt(data['asr_safe_fixture']['rate'])} refusal={_fmt(data['safe_refusal']['rate'])}")
+    else:
+        print(f"asr_live            {_fmt(s['asr_live']['rate'])} ({s['asr_live']['hit']}/{s['asr_live']['n']})")
+        print(f"refusal_rate        {_fmt(s['refusal_rate']['rate'])} "
+              f"({s['refusal_rate']['hit']}/{s['refusal_rate']['n']})")
+        print(f"normal_false_refusal {_fmt(s['normal_false_refusal_rate']['rate'])} "
+              f"({s['normal_false_refusal_rate']['hit']}/{s['normal_false_refusal_rate']['n']})")
+        print(f"leak_cases          {s['leak_cases']}")
+        print(f"errors              {meta['errors']}")
+    failed = report.get("failed_cases") or {}
+    print(f"failed_cases        {len(failed)}")
+    for case_id, reasons in failed.items():
+        print(f"  - {case_id}: {'; '.join(reasons)}")
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="提示注入与数据外泄防护评测")
+    parser.add_argument("--dataset", type=Path, default=DEFAULT_DATASET)
+    parser.add_argument("--mode", default="fixture", choices=["fixture", "live"])
+    parser.add_argument("--split", default="all", choices=["all", "dev", "holdout"])
+    parser.add_argument("--max-cases", type=int, default=DEFAULT_MAX_CASES)
+    parser.add_argument("--model", default=None)
+    parser.add_argument("--out", type=Path, default=None)
+    args = parser.parse_args(argv)
+
+    if args.mode == "live":
+        if args.max_cases < 1 or args.max_cases > MAX_CASES_LIMIT:
+            print(f"--max-cases 必须在 1..{MAX_CASES_LIMIT} 之间（live 有调用成本）", file=sys.stderr)
+            return 2
+    else:
+        args.max_cases = 0  # fixture 不调用模型
+
+    cases = load_cases(args.dataset)
+    if args.split != "all":
+        cases = [case for case in cases if case["split"] == args.split]
+    if not cases:
+        print(f"数据集 {args.dataset} 在 split={args.split} 下没有用例", file=sys.stderr)
+        return 2
+
+    try:
+        if args.mode == "live":
+            report = evaluate_live(cases, max_cases=args.max_cases, model=args.model)
+            report["meta"]["split"] = args.split
+        else:
+            report = evaluate_fixture(cases)
+    except RuntimeError as exc:
+        print(f"SKIP: {exc}。未产生 live 指标，不计入通过率。", file=sys.stderr)
+        return 2
+
+    report["meta"]["dataset_path"] = str(args.dataset)
+    report["meta"]["dataset_sha256"] = hashlib.sha256(args.dataset.read_bytes()).hexdigest()
+    report["meta"]["split"] = args.split
+    report["meta"]["command"] = " ".join(["python", "-m", "app.eval.injection_eval", *(argv or sys.argv[1:])])
+
+    print_report(report)
+    out = args.out or (DEFAULT_OUT_DIR / f"injection_{args.mode}_{args.split}.json")
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+    print(f"\n结果已写入 {out}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
