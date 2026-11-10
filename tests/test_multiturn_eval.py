@@ -89,6 +89,9 @@ class TestEvaluation:
         assert report["meta"]["turns"] == 4
         assert report["meta"]["sessions"] == 3
 
-    def test_live_mode_is_explicitly_skipped(self, capsys):
-        assert mt.main(["--mode", "live"]) == 2
-        assert "SKIP" in capsys.readouterr().err
+    def test_live_mode_requires_key_and_never_fakes_metrics(self, capsys, monkeypatch):
+        for name in ("LLM_API_KEY", "DEEPSEEK_API_KEY", "DASHSCOPE_API_KEY"):
+            monkeypatch.delenv(name, raising=False)
+        assert mt.main(["--mode", "live"]) == 3
+        err = capsys.readouterr().err
+        assert "ERROR" in err and "LLM_API_KEY" in err

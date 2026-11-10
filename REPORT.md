@@ -385,6 +385,7 @@ uv run python -m app.eval.loadtest --levels 1 5 10 20
 | 痛点 | 改造前 | 改造后 | 类型 | 来源（时间） |
 | --- | --- | --- | --- | --- |
 | 缓存跨租户/跨库误命中率 | **0.500**（2/4 探针）`legacy` 身份 | **0.000**（0/4）`scoped` 身份 | fixture | `mt_legacy.json` → `mt_scoped.json`（2026-11-11 01:15 CST） |
+| 缓存跨租户/跨库误命中率（真实模型） | **0.500**（2/4 探针）`legacy` 身份 | **0.000**（0/4）`scoped` 身份 | live | `mt_live_legacy.json` → `mt_live_scoped.json`（2026-11-11，`EMBEDDING_DEVICE=cpu`） |
 | 提示注入 ASR | 12/12（模拟“无防护照做”的坏回答） | 0/12（安全快照）；**live 0/6** | fixture + live | `injection_fixture.json`（2026-11-11 01:02 CST）、`injection_live_dev.json`（01:04 CST） |
 | 注入攻击明确拒答率 | — | 5/6（第 6 条为“忽略注入后正常作答”） | live | 同上，6 条 dev 攻击样本 |
 | 正常法律问题误拒 | — | 0/4 fixture；0/2 live | fixture + live | 同上 |
@@ -410,6 +411,14 @@ slot_inheritance 1.000、retrieval_recall 1.000（14/14）、citation_correct 1.
 refusal_correct 1.000、cache_false_hit 0.500 → 0.000。唯一 rewrite 失败是
 `mt_dev_rewrite` 的“主动辞职能不能要补偿”改写措辞与期望不完全一致，属口径差异，不是检索失败。
 
+多轮 live（真实 LLM `deepseek-v4.1-flash` + Milvus，15 轮 / 14 轮有效，Prompt `2026-11-11.2`）：
+rewrite exact 1/15、rewrite_self_contained 14/15、slot_inheritance 14/15、
+retrieval_recall **0.536**（n=14）、citation_correct 9/14、refusal_correct **13/15**；
+缓存探针 `legacy` 2/4 错误回放 → `scoped` **0/4**。token 用量 23,483（scoped）/ 24,933（legacy）。
+exact 改写率低是因为真实模型会把口语问题扩写成规范表述，已单独列出“无悬空指代且槽位齐全”的
+self-contained 指标；两条拒答未过分别是：火星公司适用中国劳动法（应拒未拒，路由未识别境外假设）、
+`kb_civil` 内问劳动法试用期（无依据拒答，数据集期望按民法典泛答，属 fixture/live 口径差异）。
+
 ### 9.3 未验证 / 限制（必须随报告一起读）
 
 1. **RAGAS 未在改造后重跑**：Prompt 版本从 `2026-11-11.1` 升到 `.2`，新增资料边界段落；
@@ -419,6 +428,9 @@ refusal_correct 1.000、cache_false_hit 0.500 → 0.000。唯一 rewrite 失败�
 4. **live 注入只跑 dev 8 条**（6 攻击 + 2 正常），holdout 8 条没有跑真实模型；live 结果不进入 fixture 通过率。
 5. **集成层全量仍有 6 项环境性失败**：上传/生成用例分别受登录态（2 个 401）与本地种子语料/知识库选择（4 个）影响；
    确定性安全/会话子集 6 项通过。详见 README「测试」与提交说明。
+6. **GPU 重排不稳**：本次 live 全量首跑在 holdout 首条触发 `CUDA error: an illegal instruction`，
+   同进程后续检索级联报 `'list' object has no attribute 'keys'`；数字改用 `EMBEDDING_DEVICE=cpu`
+   重跑得到。GPU 故障属环境问题，但“一次 CUDA 异常后同进程无法恢复”是已知健壮性缺口，未在本次修复。
 
 ### 9.4 复现命令与产物
 
@@ -429,6 +441,11 @@ uv run python -m pytest -q
 # 缓存多轮（fixture，前后对比）
 uv run python -m app.eval.multiturn_eval --identity legacy --out eval/results/mt_legacy.json
 uv run python -m app.eval.multiturn_eval --identity scoped --out eval/results/mt_scoped.json --compare eval/results/mt_legacy.json
+
+# 缓存多轮（live：真实 LLM + Milvus；GPU 重排不稳时强制 CPU）
+$env:EMBEDDING_DEVICE='cpu'
+uv run python -m app.eval.multiturn_eval --mode live --identity scoped --out eval/results/mt_live_scoped.json
+uv run python -m app.eval.multiturn_eval --mode live --identity legacy --out eval/results/mt_live_legacy.json
 
 # 提示注入（fixture；live 必须显式限条数）
 uv run python -m app.eval.injection_eval --out eval/results/injection_fixture.json

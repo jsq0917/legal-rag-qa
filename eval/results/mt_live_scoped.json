@@ -1,0 +1,1016 @@
+{
+  "meta": {
+    "mode": "live",
+    "data_kind": "live_llm",
+    "identity_mode": "scoped",
+    "model": "deepseek-v4.1-flash",
+    "prompt_version": "2026-11-11.2",
+    "generated_at": "2026-11-10T17:35:08+00:00",
+    "turns": 15,
+    "valid_turns": 15,
+    "sessions": 10,
+    "dataset_version": [
+      "2026-11-11.1"
+    ],
+    "llm_calls": 14,
+    "llm_usage": {
+      "prompt_tokens": 17690,
+      "completion_tokens": 5793,
+      "total_tokens": 23483
+    },
+    "errors": [],
+    "dataset_path": "E:\\project\\LawAnswer\\eval\\datasets\\multiturn_sessions.jsonl",
+    "dataset_sha256": "153bb7a875fd0df9b7788b2cc61982f43ef93bc6205313be1f69b67514b7c7fd",
+    "split": "all",
+    "command": "python -m app.eval.multiturn_eval --mode live --identity scoped --split all --out eval/results/mt_live_scoped.json"
+  },
+  "summary": {
+    "rewrite_correct": {
+      "n": 15,
+      "hit": 1,
+      "rate": 0.06666666666666667
+    },
+    "rewrite_self_contained": {
+      "n": 15,
+      "hit": 14,
+      "rate": 0.9333333333333333
+    },
+    "slot_inheritance": {
+      "n": 15,
+      "hit": 14,
+      "rate": 0.9333333333333333
+    },
+    "subquery_recall": {
+      "n": 1,
+      "mean": 0.0
+    },
+    "retrieval_recall": {
+      "n": 14,
+      "mean": 0.5357142857142857,
+      "full_recall": {
+        "n": 14,
+        "hit": 7,
+        "rate": 0.5
+      }
+    },
+    "citation_correct": {
+      "n": 14,
+      "hit": 9,
+      "rate": 0.6428571428571429
+    },
+    "refusal_correct": {
+      "n": 15,
+      "hit": 13,
+      "rate": 0.8666666666666667
+    },
+    "cache_false_hit": {
+      "probes": 4,
+      "hits": 0,
+      "false_hits": 0,
+      "rate": 0.0
+    },
+    "semantic_judge": {
+      "enabled": false,
+      "judged": 0,
+      "note": "语义判断未启用，不计入任何通过率；需要时单独接入 LLM-as-judge"
+    }
+  },
+  "by_split": {
+    "dev": {
+      "turns": 11,
+      "rewrite_correct": {
+        "n": 11,
+        "hit": 0,
+        "rate": 0.0
+      },
+      "rewrite_self_contained": {
+        "n": 11,
+        "hit": 10,
+        "rate": 0.9090909090909091
+      },
+      "slot_inheritance": {
+        "n": 11,
+        "hit": 10,
+        "rate": 0.9090909090909091
+      },
+      "citation_correct": {
+        "n": 10,
+        "hit": 7,
+        "rate": 0.7
+      },
+      "refusal_correct": {
+        "n": 11,
+        "hit": 9,
+        "rate": 0.8181818181818182
+      },
+      "cache": {
+        "probes": 2,
+        "false_hits": 0
+      }
+    },
+    "holdout": {
+      "turns": 4,
+      "rewrite_correct": {
+        "n": 4,
+        "hit": 1,
+        "rate": 0.25
+      },
+      "rewrite_self_contained": {
+        "n": 4,
+        "hit": 4,
+        "rate": 1.0
+      },
+      "slot_inheritance": {
+        "n": 4,
+        "hit": 4,
+        "rate": 1.0
+      },
+      "citation_correct": {
+        "n": 4,
+        "hit": 2,
+        "rate": 0.5
+      },
+      "refusal_correct": {
+        "n": 4,
+        "hit": 4,
+        "rate": 1.0
+      },
+      "cache": {
+        "probes": 2,
+        "false_hits": 0
+      }
+    }
+  },
+  "raw_turns": [
+    {
+      "session_id": "mt_dev_rewrite",
+      "dataset_version": "2026-11-11.1",
+      "split": "dev",
+      "tenant_id": "default",
+      "kb_ids": [
+        "kb_labor"
+      ],
+      "turn": 1,
+      "query": "我上个月被公司辞退了，能拿赔偿吗？",
+      "observed_standalone": "用人单位违法解除劳动合同，劳动者能否要求支付赔偿金，赔偿金标准为经济补偿的二倍",
+      "expected_standalone": "被公司辞退可以拿到什么赔偿",
+      "observed_refs": [
+        "中华人民共和国劳动合同法#第八十七条",
+        "中华人民共和国劳动合同法实施条例#第二十五条",
+        "中华人民共和国劳动合同法实施条例#第三十四条",
+        "中华人民共和国劳动合同法#第四十八条",
+        "中华人民共和国劳动合同法#第九十条"
+      ],
+      "expected_refs": [
+        "中华人民共和国劳动合同法#第四十六条",
+        "中华人民共和国劳动合同法#第四十七条"
+      ],
+      "turn_recall": 0.0,
+      "subquery_recall": null,
+      "intent": "labor_law",
+      "rewrite_type": "hyde",
+      "route": "hybrid",
+      "hit_count": 5,
+      "valid": true,
+      "retrieval_error": "",
+      "generation_error": "",
+      "answer": "可以。用人单位违法解除劳动合同，劳动者不要求继续履行或合同已不能继续履行的，有权要求按经济补偿标准的二倍支付赔偿金。\n\n**依据：**\n\n用人单位违反本法规定解除或者终止劳动合同，劳动者要求继续履行劳动合同的，用人单位应当继续履行；劳动者不要求继续履行劳动合同或者劳动合同已经不能继续履行的，用人单位应当依照本法第八十七条规定支付赔偿金。（《中华人民共和国劳动合同法》第四十八条）\n\n用人单位违反本法规定解除或者终止劳动合同的，应当依照本法第四十七条规定的经济补偿标准的二倍向劳动者支付赔偿金。（《中华人民共和国劳动合同法》第八十七条）\n\n用人单位违反劳动合同法的规定解除或者终止劳动合同，依照劳动合同法第八十七条的规定支付了赔偿金的，不再支付经济补偿。赔偿金的计算年限自用工之日起计算。（《中华人民共和国劳动合同法实施条例》第二十五条）\n\n**计算方式：**\n\n赔偿金 = 2 × 经济补偿标准；经济补偿标准依《中华人民共和国劳动合同法》第四十七条确定（该条具体计算规则未在本次资料中给出，现有资料未涉及，建议查阅该条原文或咨询当地劳动仲裁机构）。计算年限自用工之日起计算（《中华人民共和国劳动合同法实施条例》第二十五条）。\n\n**实务提示：**\n\n1. 赔偿金与经济补偿不并用：用人单位已按第八十七条支付赔偿金的，不再支付经济补偿（《中华人民共和国劳动合同法实施条例》第二十五条）。\n2. 用人单位应支付赔偿金而未支付的，劳动行政部门应当责令其支付（《中华人民共和国劳动合同法实施条例》第三十四条）。\n\n以上分析仅供参考，具体以裁判机关认定为准。",
+      "should_refuse": false,
+      "observed_refused": false,
+      "identity_mode": "scoped",
+      "cache_hit": null,
+      "cache_false_hit": null,
+      "checks": {
+        "rewrite": false,
+        "rewrite_self_contained": true,
+        "slot": true,
+        "citation": false,
+        "refusal": true,
+        "cache_false_hit": null
+      },
+      "failures": [
+        "rewrite_mismatch: '用人单位违法解除劳动合同，劳动者能否要求支付赔偿金，赔偿金标准为经济补偿的二倍' != '被公司辞退可以拿到什么赔偿'",
+        "retrieval_miss: 0.00",
+        "citation_miss"
+      ]
+    },
+    {
+      "session_id": "mt_dev_rewrite",
+      "dataset_version": "2026-11-11.1",
+      "split": "dev",
+      "tenant_id": "default",
+      "kb_ids": [
+        "kb_labor"
+      ],
+      "turn": 2,
+      "query": "那如果是我主动辞职呢？",
+      "observed_standalone": "劳动者主动辞职（本人提出解除劳动合同）能否获得经济补偿",
+      "expected_standalone": "主动辞职是否有经济补偿",
+      "observed_refs": [
+        "中华人民共和国劳动合同法实施条例#第五条",
+        "中华人民共和国劳动合同法#第四十六条",
+        "中华人民共和国劳动合同法实施条例#第二十二条",
+        "中华人民共和国劳动合同法#第八十七条",
+        "中华人民共和国劳动合同法实施条例#第二十五条"
+      ],
+      "expected_refs": [
+        "中华人民共和国劳动合同法#第三十八条"
+      ],
+      "turn_recall": 0.0,
+      "subquery_recall": null,
+      "intent": "labor_law",
+      "rewrite_type": "history",
+      "route": "hybrid",
+      "hit_count": 5,
+      "valid": true,
+      "retrieval_error": "",
+      "generation_error": "",
+      "answer": "劳动者本人主动提出解除劳动合同，一般不能获得经济补偿；但如果是依据《劳动合同法》第三十八条（用人单位存在未按约定提供劳动保护、未及时足额支付劳动报酬等情形）解除的，则属于应当支付经济补偿的情形。\n\n**依据：**\n\n有下列情形之一的，用人单位应当向劳动者支付经济补偿：（一）劳动者依照本法第三十八条规定解除劳动合同的；（二）用人单位依照本法第三十六条规定向劳动者提出解除劳动合同并与劳动者协商一致解除劳动合同的；（三）用人单位依照本法第四十条规定解除劳动合同的；（四）用人单位依照本法第四十一条第一款规定解除劳动合同的；（五）除用人单位维持或者提高劳动合同约定条件续订劳动合同，劳动者不同意续订的情形外，依照本法第四十四条第一项规定终止固定期限劳动合同的；（六）依照本法第四十四条第四项、第五项规定终止劳动合同的；（七）法律、行政法规规定的其他情形。（《中华人民共和国劳动合同法》第四十六条）\n\n**实务提示：**\n\n1. 从第四十六条列举的情形看，经济补偿的支付主体是\"用人单位\"，触发事由包括用人单位提出协商一致解除、用人单位依第四十条或第四十一条第一款解除、特定情形下终止合同等；劳动者单纯\"本人提出辞职\"不在列举范围内，故一般无经济补偿（《中华人民共和国劳动合同法》第四十六条）。\n2. 唯一与劳动者主动解除挂钩的入口是第四十六条第一项，即劳动者依第三十八条解除劳动合同（《中华人民共和国劳动合同法》第四十六条）。第三十八条的具体情形本次资料未给出，现有资料未涉及，建议查阅该条原文或咨询当地劳动监察部门、劳动仲裁机构。\n3. 若属用人单位违法解除而非劳动者辞职，则适用赔偿金规则：按第四十七条经济补偿标准的二倍支付，且支付赔偿金后不再支付经济补偿，计算年限自用工之日起计算（《中华人民共和国劳动合同法》第八十七条、《中华人民共和国劳动合同法实施条例》第二十五条）。\n\n以上分析仅供参考，具体以裁判机关认定为准。",
+      "should_refuse": false,
+      "observed_refused": false,
+      "identity_mode": "scoped",
+      "cache_hit": null,
+      "cache_false_hit": null,
+      "checks": {
+        "rewrite": false,
+        "rewrite_self_contained": true,
+        "slot": true,
+        "citation": true,
+        "refusal": true,
+        "cache_false_hit": null
+      },
+      "failures": [
+        "rewrite_mismatch: '劳动者主动辞职（本人提出解除劳动合同）能否获得经济补偿' != '主动辞职是否有经济补偿'",
+        "retrieval_miss: 0.00"
+      ]
+    },
+    {
+      "session_id": "mt_dev_rewrite",
+      "dataset_version": "2026-11-11.1",
+      "split": "dev",
+      "tenant_id": "default",
+      "kb_ids": [
+        "kb_labor"
+      ],
+      "turn": 3,
+      "query": "工资按8000算，N+1是多少？",
+      "observed_standalone": "经济补偿金及代通知金（N+1）的计算方式，月工资8000元时如何计算",
+      "expected_standalone": "月工资8000元时N+1经济补偿如何计算",
+      "observed_refs": [
+        "中华人民共和国劳动合同法实施条例#第二十七条",
+        "中华人民共和国劳动合同法#第四十七条",
+        "中华人民共和国劳动合同法实施条例#第二十五条",
+        "中华人民共和国劳动合同法#第九十七条",
+        "工伤保险条例#第六十四条"
+      ],
+      "expected_refs": [
+        "中华人民共和国劳动合同法#第四十七条"
+      ],
+      "turn_recall": 1.0,
+      "subquery_recall": null,
+      "intent": "labor_law",
+      "rewrite_type": "history",
+      "route": "hybrid",
+      "hit_count": 5,
+      "valid": true,
+      "retrieval_error": "",
+      "generation_error": "",
+      "answer": "你问的是经济补偿金和代通知金（N+1）怎么算、月工资8000元时怎么套公式。先说结论：经济补偿按工作年限×月工资计算，月工资指解除或终止前12个月的平均工资（应得工资口径）；\"代通知金\"（+1）的适用条件与计算规则，本次资料未涉及，无法给出依据。\n\n**一、经济补偿（N）的计算**\n\n经济补偿按劳动者在本单位工作的年限，每满一年支付一个月工资的标准向劳动者支付。六个月以上不满一年的，按一年计算；不满六个月的，向劳动者支付半个月工资的经济补偿。（《中华人民共和国劳动合同法》第四十七条）\n\n本条所称月工资是指劳动者在劳动合同解除或者终止前十二个月的平均工资。（《中华人民共和国劳动合同法》第四十七条）\n\n劳动合同法第四十七条规定的经济补偿的月工资按照劳动者应得工资计算，包括计时工资或者计件工资以及奖金、津贴和补贴等货币性收入。劳动者在劳动合同解除或者终止前12个月的平均工资低于当地最低工资标准的，按照当地最低工资标准计算。劳动者工作不满12个月的，按照实际工作的月数计算平均工资。（《中华人民共和国劳动合同法实施条例》第二十七条）\n\n**计算公式与变量说明：**\n\n- 经济补偿 = N × 月工资基数\n- N = 在本单位工作年限：每满一年算1个月；六个月以上不满一年按1年算（即1个月）；不满六个月算半个月（0.5个月）（《中华人民共和国劳动合同法》第四十七条）\n- 月工资基数 = 解除或终止前12个月的平均应得工资，含计时/计件工资、奖金、津贴、补贴等货币性收入；工作不满12个月的按实际工作月数平均；低于当地最低工资标准的按最低工资标准计（《中华人民共和国劳动合同法》第四十七条、《中华人民共和国劳动合同法实施条例》第二十七条）\n\n**月工资8000元时的套算方式：** 若8000元即为解除前12个月平均应得工资，则经济补偿 = N × 8000元，N按上述年限规则取值。资料中未给出你的工作年限，故不代入具体年限计算。\n\n**二、高薪封顶规则（可能影响基数）**\n\n劳动者月工资高于用人单位所在直辖市、设区的市级人民政府公布的本地区上年度职工月平均工资三倍的，向其支付经济补偿的标准按职工月平均工资三倍的数额支付，向其支付经济补偿的年限最高不超过十二年。（《中华人民共和国劳动合同法》第四十七条）\n\n即：若8000元高于当地上年度职工月平均工资的三倍，基数按三倍封顶、年限最高12年；是否触发需以当地公布数据比对，资料未提供该数据。\n\n**三、代通知金（+1）**\n\n本次资料未涉及\"代通知金\"的适用情形与计算规则，现有资料未涉及，建议查阅《中华人民共和国劳动合同法》第四十条原文或咨询当地劳动监察部门、劳动仲裁机构。\n\n**四、其他相关规则**\n\n1. 违法解除情形下按经济补偿标准的二倍支付赔偿金，且支付赔偿金后不再支付经济补偿，赔偿金计算年限自用工之日起计算（《中华人民共和国劳动合同法实施条例》第二十五条）。\n2. 本法施行之日存续的劳动合同在本法施行后解除或终止，依第四十六条应支付经济补偿的，经济补偿年限自本法施行之日起计算；本法施行前按当时有关规定应支付经济补偿的，按当时有关规定执行（《中华人民共和国劳动合同法》第九十七条）。\n\n以上分析仅供参考，具体以裁判机关认定为准。",
+      "should_refuse": false,
+      "observed_refused": false,
+      "identity_mode": "scoped",
+      "cache_hit": null,
+      "cache_false_hit": null,
+      "checks": {
+        "rewrite": false,
+        "rewrite_self_contained": true,
+        "slot": true,
+        "citation": true,
+        "refusal": true,
+        "cache_false_hit": null
+      },
+      "failures": [
+        "rewrite_mismatch: '经济补偿金及代通知金（N+1）的计算方式，月工资8000元时如何计算' != '月工资8000元时N+1经济补偿如何计算'"
+      ]
+    },
+    {
+      "session_id": "mt_dev_slot",
+      "dataset_version": "2026-11-11.1",
+      "split": "dev",
+      "tenant_id": "default",
+      "kb_ids": [
+        "kb_labor"
+      ],
+      "turn": 1,
+      "query": "我在北京工作，公司没给我缴社保怎么办",
+      "observed_standalone": "用人单位未依法为劳动者缴纳社会保险费，劳动者可以要求补缴或解除劳动合同并主张经济补偿的法律规定",
+      "expected_standalone": "北京公司未缴纳社保如何维权",
+      "observed_refs": [
+        "中华人民共和国劳动合同法#第三十八条",
+        "中华人民共和国劳动合同法#第八十七条",
+        "中华人民共和国劳动合同法#第四十六条",
+        "中华人民共和国劳动合同法#第五十条",
+        "中华人民共和国劳动合同法#第八十九条"
+      ],
+      "expected_refs": [
+        "中华人民共和国劳动合同法#第三十八条"
+      ],
+      "turn_recall": 1.0,
+      "subquery_recall": null,
+      "intent": "labor_law",
+      "rewrite_type": "hyde",
+      "route": "hybrid",
+      "hit_count": 5,
+      "valid": true,
+      "retrieval_error": "",
+      "generation_error": "",
+      "answer": "用人单位未依法缴纳社保的，劳动者可以据此解除劳动合同并主张经济补偿；补缴社保本身属于行政征缴范畴，现有资料只涉及解除与补偿，未涉及补缴的具体程序规定。\n\n**一、劳动者可以解除劳动合同**\n\n用人单位未依法为劳动者缴纳社会保险费的，劳动者可以解除劳动合同（《中华人民共和国劳动合同法》第三十八条）。\n\n**二、解除后可以主张经济补偿**\n\n劳动者依照第三十八条规定解除劳动合同的，用人单位应当向劳动者支付经济补偿（《中华人民共和国劳动合同法》第四十六条）。\n\n**三、补偿标准与计算方式**\n\n经济补偿 = N × 月工资基数；N = 工作年限（每满一年算一个月，不满六个月算半个月）；月工资基数 = 离职前 12 个月平均工资。资料中第四十七条原文未提供，上述计算规则的具体条文依据现有资料未涉及，建议以第四十七条正式文本核对。\n\n**四、用人单位违法解除的后果（对照情形）**\n\n若用人单位违反本法规定解除或者终止劳动合同，应当依照第四十七条规定的经济补偿标准的二倍向劳动者支付赔偿金（《中华人民共和国劳动合同法》第八十七条）。\n\n**五、解除后的附随义务**\n\n用人单位应当在解除或者终止劳动合同时出具解除或者终止劳动合同的证明，并在十五日内为劳动者办理档案和社会保险关系转移手续；应当支付经济补偿的，在办结工作交接时支付（《中华人民共和国劳动合同法》第五十条）。用人单位违反规定未出具书面证明的，由劳动行政部门责令改正；给劳动者造成损害的，应当承担赔偿责任（《中华人民共和国劳动合同法》第八十九条）。\n\n**实务提示**\n\n1. 以\"未依法缴纳社会保险费\"为由解除劳动合同的，属于第三十八条列举情形，可同时主张经济补偿（《中华人民共和国劳动合同法》第三十八条、第四十六条）。\n2. 解除时注意要求用人单位出具解除劳动合同的书面证明并办理社保关系转移手续，逾期或拒不出具的可向劳动行政部门反映（《中华人民共和国劳动合同法》第五十条、第八十九条）。\n3. 关于社保补缴的具体途径、流程和时效，现有资料未涉及，建议咨询当地劳动监察部门或社会保险经办机构。\n\n以上分析仅供参考，具体以裁判机关认定为准。",
+      "should_refuse": false,
+      "observed_refused": false,
+      "identity_mode": "scoped",
+      "cache_hit": null,
+      "cache_false_hit": null,
+      "checks": {
+        "rewrite": false,
+        "rewrite_self_contained": false,
+        "slot": false,
+        "citation": true,
+        "refusal": true,
+        "cache_false_hit": null
+      },
+      "failures": [
+        "rewrite_mismatch: '用人单位未依法为劳动者缴纳社会保险费，劳动者可以要求补缴或解除劳动合同并主张经济补偿的法律规定' != '北京公司未缴纳社保如何维权'",
+        "slot_missing: region"
+      ]
+    },
+    {
+      "session_id": "mt_dev_slot",
+      "dataset_version": "2026-11-11.1",
+      "split": "dev",
+      "tenant_id": "default",
+      "kb_ids": [
+        "kb_labor"
+      ],
+      "turn": 2,
+      "query": "那上海呢",
+      "observed_standalone": "上海地区用人单位未依法缴纳社保，劳动者解除劳动合同并主张经济补偿的规定",
+      "expected_standalone": "上海公司未缴纳社保如何维权",
+      "observed_refs": [
+        "中华人民共和国劳动合同法#第八十七条",
+        "中华人民共和国劳动合同法实施条例#第二十二条",
+        "中华人民共和国劳动合同法实施条例#第二十五条",
+        "中华人民共和国劳动合同法#第三十八条",
+        "中华人民共和国劳动合同法#第四十六条"
+      ],
+      "expected_refs": [
+        "中华人民共和国劳动合同法#第三十八条"
+      ],
+      "turn_recall": 1.0,
+      "subquery_recall": null,
+      "intent": "labor_law",
+      "rewrite_type": "history",
+      "route": "hybrid",
+      "hit_count": 5,
+      "valid": true,
+      "retrieval_error": "",
+      "generation_error": "",
+      "answer": "您问的是上海地区用人单位未依法缴纳社保、劳动者解除劳动合同并主张经济补偿的规定。就本次【参考资料】而言，能支撑的结论是：劳动者可以\"未依法缴纳社会保险费\"为由解除劳动合同，并据此主张经济补偿；但资料中没有上海地区的地方性规定，也没有第四十七条的条文原文。\n\n**一、劳动者可以解除劳动合同**\n\n用人单位未依法为劳动者缴纳社会保险费的，劳动者可以解除劳动合同（《中华人民共和国劳动合同法》第三十八条）。\n\n**二、解除后用人单位应当支付经济补偿**\n\n劳动者依照本法第三十八条规定解除劳动合同的，用人单位应当向劳动者支付经济补偿（《中华人民共和国劳动合同法》第四十六条）。\n\n**三、补偿标准与计算方式**\n\n经济补偿 = N × 月工资基数；N = 工作年限（每满一年算一个月，不满六个月算半个月）；月工资基数 = 离职前 12 个月平均工资。上述计算规则所对应的第四十七条条文原文，本次资料未提供，具体表述请以第四十七条正式文本核对。\n\n**四、与赔偿金的衔接（对照情形）**\n\n用人单位违反本法规定解除或者终止劳动合同的，应当依照第四十七条规定的经济补偿标准的二倍支付赔偿金（《中华人民共和国劳动合同法》第八十七条）；用人单位依照第八十七条支付了赔偿金的，不再支付经济补偿，赔偿金的计算年限自用工之日起计算（《中华人民共和国劳动合同法实施条例》第二十五条）。\n\n**五、其他终止情形下的补偿（对照情形）**\n\n以完成一定工作任务为期限的劳动合同因任务完成而终止的，用人单位应当依照第四十七条的规定支付经济补偿（《中华人民共和国劳动合同法实施条例》第二十二条）。\n\n**实务提示**\n\n1. 以\"未依法缴纳社会保险费\"为由解除劳动合同，属于第三十八条列举情形，可同时主张经济补偿（《中华人民共和国劳动合同法》第三十八条、第四十六条）。\n2. 若用人单位另行构成违法解除并已按第八十七条支付赔偿金，则不再重复支付经济补偿，赔偿金年限自用工之日起算（《中华人民共和国劳动合同法实施条例》第二十五条）。\n3. 上海地区的地方性裁审口径、社保补缴的具体途径与流程，本次资料未涉及，建议向当地劳动监察部门、社会保险经办机构咨询，或申请劳动仲裁。\n\n以上分析仅供参考，具体以裁判机关认定为准。",
+      "should_refuse": false,
+      "observed_refused": false,
+      "identity_mode": "scoped",
+      "cache_hit": null,
+      "cache_false_hit": null,
+      "checks": {
+        "rewrite": false,
+        "rewrite_self_contained": true,
+        "slot": true,
+        "citation": true,
+        "refusal": true,
+        "cache_false_hit": null
+      },
+      "failures": [
+        "rewrite_mismatch: '上海地区用人单位未依法缴纳社保，劳动者解除劳动合同并主张经济补偿的规定' != '上海公司未缴纳社保如何维权'"
+      ]
+    },
+    {
+      "session_id": "mt_dev_multi",
+      "dataset_version": "2026-11-11.1",
+      "split": "dev",
+      "tenant_id": "default",
+      "kb_ids": [
+        "kb_labor"
+      ],
+      "turn": 1,
+      "query": "拖欠工资和没签合同分别怎么维权",
+      "observed_standalone": "用人单位拖欠工资，劳动者如何维权（投诉、仲裁、支付令），用人单位未与劳动者签订书面劳动合同，劳动者如何主张二倍工资及维权途径",
+      "expected_standalone": "拖欠工资怎么维权，未签劳动合同怎么维权",
+      "observed_refs": [
+        "中华人民共和国劳动合同法#第三十条",
+        "中华人民共和国劳动争议调解仲裁法#第九条",
+        "中华人民共和国劳动合同法#第八十二条",
+        "中华人民共和国劳动合同法#第十四条",
+        "中华人民共和国劳动争议调解仲裁法#第十六条"
+      ],
+      "expected_refs": [
+        "中华人民共和国劳动合同法#第八十五条",
+        "中华人民共和国劳动合同法#第八十二条"
+      ],
+      "turn_recall": 0.5,
+      "subquery_recall": 0.0,
+      "intent": "labor_law",
+      "rewrite_type": "decompose",
+      "route": "pure_vector",
+      "hit_count": 5,
+      "valid": true,
+      "retrieval_error": "",
+      "generation_error": "",
+      "answer": "用人单位拖欠工资、又未签书面劳动合同的，劳动者可以走投诉、申请支付令、劳动仲裁三条路径，并可就未签合同主张二倍工资。下面分两部分说明。\n\n**一、拖欠工资的维权途径**\n\n1. **向劳动行政部门投诉。** 用人单位违反国家规定拖欠或者未足额支付劳动报酬的，劳动者可以向劳动行政部门投诉，劳动行政部门应当依法处理（《中华人民共和国劳动争议调解仲裁法》第九条）。\n2. **向法院申请支付令。** 用人单位拖欠或者未足额支付劳动报酬的，劳动者可以依法向当地人民法院申请支付令，人民法院应当依法发出支付令（《中华人民共和国劳动合同法》第三十条）。\n3. **持调解协议申请支付令。** 因支付拖欠劳动报酬事项达成调解协议，用人单位在协议约定期限内不履行的，劳动者可以持调解协议书依法向人民法院申请支付令，人民法院应当依法发出支付令（《中华人民共和国劳动争议调解仲裁法》第十六条）。\n\n**二、未签书面劳动合同的二倍工资**\n\n用人单位自用工之日起超过一个月不满一年未与劳动者订立书面劳动合同的，应当向劳动者每月支付二倍的工资（《中华人民共和国劳动合同法》第八十二条）。另需注意：用人单位自用工之日起满一年不与劳动者订立书面劳动合同的，视为用人单位与劳动者已订立无固定期限劳动合同（《中华人民共和国劳动合同法》第十四条）。\n\n**三、实务提示（仅限资料可支撑的内容）**\n\n- 拖欠工资情形下，投诉与申请支付令是资料明确列举的两条途径，可据此主张（《中华人民共和国劳动争议调解仲裁法》第九条、《中华人民共和国劳动合同法》第三十条）。\n- 已就欠薪达成调解协议的，可直接持调解协议书申请支付令（《中华人民共和国劳动争议调解仲裁法》第十六条）。\n- 主张二倍工资的起算与截止区间为\"用工之日起超过一个月不满一年\"，满一年后转为视为订立无固定期限劳动合同（《中华人民共和国劳动合同法》第八十二条、《中华人民共和国劳动合同法》第十四条）。\n- 关于二倍工资的计算基数、仲裁时效、举证责任分配，以及劳动仲裁的具体申请流程，**现有资料未涉及**，建议向当地劳动人事争议仲裁委员会或劳动监察部门咨询确认。\n\n以上分析仅供参考，具体以裁判机关认定为准。",
+      "should_refuse": false,
+      "observed_refused": false,
+      "identity_mode": "scoped",
+      "cache_hit": null,
+      "cache_false_hit": null,
+      "checks": {
+        "rewrite": false,
+        "rewrite_self_contained": true,
+        "slot": true,
+        "citation": false,
+        "refusal": true,
+        "cache_false_hit": null
+      },
+      "failures": [
+        "rewrite_mismatch: '用人单位拖欠工资，劳动者如何维权（投诉、仲裁、支付令），用人单位未与劳动者签订书面劳动合同，劳动者如何主张二倍工资及维权途径' != '拖欠工资怎么维权，未签劳动合同怎么维权'",
+        "retrieval_miss: 0.50",
+        "citation_miss"
+      ]
+    },
+    {
+      "session_id": "mt_dev_refusal",
+      "dataset_version": "2026-11-11.1",
+      "split": "dev",
+      "tenant_id": "default",
+      "kb_ids": [
+        "kb_labor"
+      ],
+      "turn": 1,
+      "query": "火星上的公司适用中国劳动法吗",
+      "observed_standalone": "中国劳动法是否适用于在火星注册的公司及其劳动关系",
+      "expected_standalone": "火星上的公司是否适用中国劳动法",
+      "observed_refs": [
+        "中华人民共和国劳动法#第二条",
+        "中华人民共和国劳动合同法#第二条",
+        "中华人民共和国劳动合同法#第七条"
+      ],
+      "expected_refs": [],
+      "turn_recall": null,
+      "subquery_recall": null,
+      "intent": "labor_law",
+      "rewrite_type": "direct",
+      "route": "pure_vector",
+      "hit_count": 3,
+      "valid": true,
+      "retrieval_error": "",
+      "generation_error": "",
+      "answer": "你问的是中国劳动法能否适用于在火星注册的公司及其劳动关系。结论是：**现有资料未涉及“火星注册”这类情形，无法据此认定中国劳动法适用于该公司**；资料只界定了“境内”用人单位与劳动者的适用范围。\n\n依据方面，资料中的适用范围均以“在中华人民共和国境内”为前提：\n- 在中华人民共和国境内的企业、个体经济组织（以下统称用人单位）和与之形成劳动关系的劳动者，适用本法（《中华人民共和国劳动法》第二条）。\n- 中华人民共和国境内的企业、个体经济组织、民办非企业单位等组织（以下称用人单位）与劳动者建立劳动关系，订立、履行、变更、解除或者终止劳动合同，适用本法（《中华人民共和国劳动合同法》第二条）。\n- 用人单位自用工之日起即与劳动者建立劳动关系（《中华人民共和国劳动合同法》第七条）。\n\n实务提示：\n- 资料只以“境内”作为适用地域的连接点，对“境外注册主体”是否适用、如何适用均未规定，因此不能仅凭上述条文得出“适用”或“不适用”的确定结论（《中华人民共和国劳动法》第二条、《中华人民共和国劳动合同法》第二条）。\n- 若实际用工行为发生在中国境内，可结合“自用工之日起建立劳动关系”这一规定，向当地劳动监察部门或申请劳动仲裁时说明事实经过，由受理机关判断（《中华人民共和国劳动合同法》第七条）。\n\n以上分析仅供参考，具体以裁判机关认定为准。",
+      "should_refuse": true,
+      "observed_refused": false,
+      "identity_mode": "scoped",
+      "cache_hit": null,
+      "cache_false_hit": null,
+      "checks": {
+        "rewrite": false,
+        "rewrite_self_contained": true,
+        "slot": true,
+        "citation": null,
+        "refusal": false,
+        "cache_false_hit": null
+      },
+      "failures": [
+        "rewrite_mismatch: '中国劳动法是否适用于在火星注册的公司及其劳动关系' != '火星上的公司是否适用中国劳动法'",
+        "refusal_mismatch: expected=True observed=False"
+      ]
+    },
+    {
+      "session_id": "mt_dev_cache_labor",
+      "dataset_version": "2026-11-11.1",
+      "split": "dev",
+      "tenant_id": "default",
+      "kb_ids": [
+        "kb_labor"
+      ],
+      "turn": 1,
+      "query": "试用期最长可以约定多久",
+      "observed_standalone": "劳动合同法对试用期最长可以约定多久的规定",
+      "expected_standalone": "试用期最长可以约定多久",
+      "observed_refs": [
+        "中华人民共和国劳动合同法#第十九条",
+        "中华人民共和国劳动合同法#第八十三条",
+        "中华人民共和国劳动合同法#第七十条"
+      ],
+      "expected_refs": [
+        "中华人民共和国劳动合同法#第十九条"
+      ],
+      "turn_recall": 1.0,
+      "subquery_recall": null,
+      "intent": "labor_law",
+      "rewrite_type": "direct",
+      "route": "hybrid",
+      "hit_count": 3,
+      "valid": true,
+      "retrieval_error": "",
+      "generation_error": "",
+      "answer": "关于试用期最长能约定多久，需要先区分合同期限：三年以上固定期限和无固定期限的劳动合同，试用期最长不得超过六个月；期限越短，上限越低，短期和非全日制用工还有禁止性规定。\n\n**依据如下：**\n\n1. 试用期的上限按合同期限分档：劳动合同期限三个月以上不满一年的，试用期不得超过一个月；一年以上不满三年的，不得超过二个月；三年以上固定期限和无固定期限的劳动合同，试用期不得超过六个月（《中华人民共和国劳动合同法》第十九条）。\n2. 同一用人单位与同一劳动者只能约定一次试用期（《中华人民共和国劳动合同法》第十九条）。\n3. 以完成一定工作任务为期限的劳动合同，或者劳动合同期限不满三个月的，不得约定试用期（《中华人民共和国劳动合同法》第十九条）。\n4. 试用期包含在劳动合同期限内；劳动合同仅约定试用期的，试用期不成立，该期限为劳动合同期限（《中华人民共和国劳动合同法》第十九条）。\n5. 非全日制用工双方当事人不得约定试用期（《中华人民共和国劳动合同法》第七十条）。\n6. 用人单位违法约定试用期的，由劳动行政部门责令改正；违法约定的试用期已经履行的，由用人单位以劳动者试用期满月工资为标准，按已经履行的超过法定试用期的期间向劳动者支付赔偿金（《中华人民共和国劳动合同法》第八十三条）。\n\n**实务提示：**\n\n- 判断试用期是否合法，先看合同期限落在哪一档，再对照上述上限；超过上限的部分即属违法约定（《中华人民共和国劳动合同法》第十九条）。\n- 同一单位对同一劳动者重复约定试用期，也属于违法约定（《中华人民共和国劳动合同法》第十九条）。\n- 违法约定的试用期已实际履行的，赔偿金计算方式为：赔偿金 = 试用期满月工资 × 超过法定试用期的已履行期间（《中华人民共和国劳动合同法》第八十三条）。\n- 遇到违法约定试用期，可向劳动行政部门反映，由其责令改正（《中华人民共和国劳动合同法》第八十三条）。\n\n以上分析仅供参考，具体以裁判机关认定为准。",
+      "should_refuse": false,
+      "observed_refused": false,
+      "identity_mode": "scoped",
+      "cache_hit": false,
+      "cache_false_hit": null,
+      "checks": {
+        "rewrite": false,
+        "rewrite_self_contained": true,
+        "slot": true,
+        "citation": true,
+        "refusal": true,
+        "cache_false_hit": null
+      },
+      "failures": [
+        "rewrite_mismatch: '劳动合同法对试用期最长可以约定多久的规定' != '试用期最长可以约定多久'"
+      ]
+    },
+    {
+      "session_id": "mt_dev_cache_civil",
+      "dataset_version": "2026-11-11.1",
+      "split": "dev",
+      "tenant_id": "default",
+      "kb_ids": [
+        "kb_civil"
+      ],
+      "turn": 1,
+      "query": "试用期最长可以约定多久",
+      "observed_standalone": "劳动合同法对试用期最长期限的规定",
+      "expected_standalone": "试用期最长可以约定多久",
+      "observed_refs": [],
+      "expected_refs": [
+        "中华人民共和国民法典#第四百七十条"
+      ],
+      "turn_recall": 0.0,
+      "subquery_recall": null,
+      "intent": "labor_law",
+      "rewrite_type": "direct",
+      "route": "no_data",
+      "hit_count": 0,
+      "valid": true,
+      "retrieval_error": "",
+      "generation_error": "",
+      "answer": "暂未在所选知识库中找到与该问题直接相关的法条或问答依据。为避免误导，我不做推测性回答。建议你：1）把问题描述得更具体（涉及哪个环节、哪部法律）；2）在上方勾选更多知识库扩大检索范围；3）咨询当地劳动监察部门或申请劳动仲裁获取权威意见。",
+      "should_refuse": false,
+      "observed_refused": true,
+      "identity_mode": "scoped",
+      "cache_hit": false,
+      "cache_false_hit": null,
+      "checks": {
+        "rewrite": false,
+        "rewrite_self_contained": true,
+        "slot": true,
+        "citation": false,
+        "refusal": false,
+        "cache_false_hit": null
+      },
+      "failures": [
+        "rewrite_mismatch: '劳动合同法对试用期最长期限的规定' != '试用期最长可以约定多久'",
+        "retrieval_miss: 0.00",
+        "citation_miss",
+        "refusal_mismatch: expected=False observed=True"
+      ]
+    },
+    {
+      "session_id": "mt_dev_kb_switch",
+      "dataset_version": "2026-11-11.1",
+      "split": "dev",
+      "tenant_id": "default",
+      "kb_ids": [
+        "kb_labor"
+      ],
+      "turn": 1,
+      "query": "竞业限制最长几年",
+      "observed_standalone": "竞业限制期限最长不得超过几年",
+      "expected_standalone": "竞业限制期限最长几年",
+      "observed_refs": [
+        "中华人民共和国劳动合同法#第二十四条",
+        "中华人民共和国劳动合同法#第二十三条",
+        "中华人民共和国劳动合同法#第七十条"
+      ],
+      "expected_refs": [
+        "中华人民共和国劳动合同法#第二十四条"
+      ],
+      "turn_recall": 1.0,
+      "subquery_recall": null,
+      "intent": "labor_law",
+      "rewrite_type": "direct",
+      "route": "hybrid",
+      "hit_count": 3,
+      "valid": true,
+      "retrieval_error": "",
+      "generation_error": "",
+      "answer": "竞业限制期限最长不得超过**二年**。\n\n**依据：**\n在解除或者终止劳动合同后，负有竞业限制义务的人员到与本单位生产或者经营同类产品、从事同类业务的有竞争关系的其他用人单位，或者自己开业生产或者经营同类产品、从事同类业务的竞业限制期限，不得超过二年。（《中华人民共和国劳动合同法》第二十四条）\n\n**实务提示：**\n- 竞业限制并非适用于所有劳动者，人员范围限于用人单位的高级管理人员、高级技术人员和其他负有保密义务的人员（《中华人民共和国劳动合同法》第二十四条）。\n- 竞业限制的范围、地域、期限由用人单位与劳动者约定，但约定不得违反法律、法规的规定（《中华人民共和国劳动合同法》第二十四条）。\n- 对负有保密义务的劳动者约定竞业限制条款的，可同时约定在解除或者终止劳动合同后、竞业限制期限内按月给予劳动者经济补偿；劳动者违反约定的，应当按照约定向用人单位支付违约金（《中华人民共和国劳动合同法》第二十三条）。\n\n以上分析仅供参考，具体以裁判机关认定为准。",
+      "should_refuse": false,
+      "observed_refused": false,
+      "identity_mode": "scoped",
+      "cache_hit": null,
+      "cache_false_hit": null,
+      "checks": {
+        "rewrite": false,
+        "rewrite_self_contained": true,
+        "slot": true,
+        "citation": true,
+        "refusal": true,
+        "cache_false_hit": null
+      },
+      "failures": [
+        "rewrite_mismatch: '竞业限制期限最长不得超过几年' != '竞业限制期限最长几年'"
+      ]
+    },
+    {
+      "session_id": "mt_dev_kb_switch",
+      "dataset_version": "2026-11-11.1",
+      "split": "dev",
+      "tenant_id": "default",
+      "kb_ids": [
+        "kb_civil"
+      ],
+      "turn": 2,
+      "query": "民法典合同编对格式条款有什么限制",
+      "observed_standalone": "民法典合同编对格式条款的限制规定",
+      "expected_standalone": "民法典合同编对格式条款有什么限制",
+      "observed_refs": [
+        "中华人民共和国民法典#第四百九十七条",
+        "中华人民共和国民法典#第四百九十六条",
+        "中华人民共和国民法典#第四百九十八条"
+      ],
+      "expected_refs": [
+        "中华人民共和国民法典#第四百九十六条"
+      ],
+      "turn_recall": 1.0,
+      "subquery_recall": null,
+      "intent": "civil_code",
+      "rewrite_type": "direct",
+      "route": "pure_vector",
+      "hit_count": 3,
+      "valid": true,
+      "retrieval_error": "",
+      "generation_error": "",
+      "answer": "你问的是《民法典》合同编对格式条款的限制规定。结论是：合同编从**条款订入（提示说明义务）、内容效力（无效情形）、解释规则**三个层面对格式条款作出限制。\n\n**一、格式条款的定义与订入限制**\n格式条款是当事人为了重复使用而预先拟定，并在订立合同时未与对方协商的条款。采用格式条款订立合同的，提供格式条款的一方应当遵循公平原则确定当事人之间的权利和义务，并采取合理的方式提示对方注意免除或者减轻其责任等与对方有重大利害关系的条款，按照对方的要求，对该条款予以说明；提供格式条款的一方未履行提示或者说明义务，致使对方没有注意或者理解与其有重大利害关系的条款的，对方可以主张该条款不成为合同的内容。（《中华人民共和国民法典》第四百九十六条）\n\n**二、内容效力限制（无效情形）**\n有下列情形之一的，该格式条款无效：（一）具有本法第一编第六章第三节和本法第五百零六条规定的无效情形；（二）提供格式条款一方不合理地免除或者减轻其责任、加重对方责任、限制对方主要权利；（三）提供格式条款一方排除对方主要权利。（《中华人民共和国民法典》第四百九十七条）\n\n**三、解释规则限制**\n对格式条款的理解发生争议的，应当按照通常理解予以解释；对格式条款有两种以上解释的，应当作出不利于提供格式条款一方的解释；格式条款和非格式条款不一致的，应当采用非格式条款。（《中华人民共和国民法典》第四百九十八条）\n\n**实务提示：**\n- 提供格式条款一方需就与对方有重大利害关系的条款履行提示和说明义务，否则对方可主张该条款不成为合同内容（《中华人民共和国民法典》第四百九十六条）。\n- 条款是否\"不合理地\"免责、加重对方责任或排除对方主要权利，是判断其效力的关键（《中华人民共和国民法典》第四百九十七条）。\n- 条款存在两种以上解释时，按不利于提供方的方向解释；与非格式条款冲突时，以非格式条款为准（《中华人民共和国民法典》第四百九十八条）。\n\n以上分析仅供参考，具体以裁判机关认定为准。",
+      "should_refuse": false,
+      "observed_refused": false,
+      "identity_mode": "scoped",
+      "cache_hit": null,
+      "cache_false_hit": null,
+      "checks": {
+        "rewrite": false,
+        "rewrite_self_contained": true,
+        "slot": true,
+        "citation": true,
+        "refusal": true,
+        "cache_false_hit": null
+      },
+      "failures": [
+        "rewrite_mismatch: '民法典合同编对格式条款的限制规定' != '民法典合同编对格式条款有什么限制'"
+      ]
+    },
+    {
+      "session_id": "mt_hold_rewrite",
+      "dataset_version": "2026-11-11.1",
+      "split": "holdout",
+      "tenant_id": "default",
+      "kb_ids": [
+        "kb_labor"
+      ],
+      "turn": 1,
+      "query": "公司说试用期不给工资，合法吗",
+      "observed_standalone": "试用期工资是否应当支付，用人单位以试用期为由不支付工资是否合法",
+      "expected_standalone": "试用期不支付工资是否合法",
+      "observed_refs": [
+        "中华人民共和国劳动合同法#第八十三条",
+        "中华人民共和国劳动合同法#第二十条",
+        "中华人民共和国劳动合同法#第八十二条"
+      ],
+      "expected_refs": [
+        "中华人民共和国劳动合同法#第二十条"
+      ],
+      "turn_recall": 1.0,
+      "subquery_recall": null,
+      "intent": "labor_law",
+      "rewrite_type": "direct",
+      "route": "hybrid",
+      "hit_count": 3,
+      "valid": true,
+      "retrieval_error": "",
+      "generation_error": "",
+      "answer": "用人单位以“试用期”为由不支付工资，是不合法的——试用期属于劳动关系存续期间，劳动者提供了正常劳动就应当获得工资，且不得低于法定下限。\n\n**依据如下：**\n\n1. 试用期工资有法定下限：劳动者在试用期的工资不得低于本单位相同岗位最低档工资或者劳动合同约定工资的百分之八十，并不得低于用人单位所在地的最低工资标准（《中华人民共和国劳动合同法》第二十条）。该条以“试用期的工资”为前提，说明试用期本身即应支付工资，只是设有下限约束。\n\n2. 违法约定试用期已履行的，还需支付赔偿金：用人单位违反本法规定与劳动者约定试用期的，由劳动行政部门责令改正；违法约定的试用期已经履行的，由用人单位以劳动者试用期满月工资为标准，按已经履行的超过法定试用期的期间向劳动者支付赔偿金（《中华人民共和国劳动合同法》第八十三条）。\n\n**实务提示：**\n\n- 判断工资是否“足额”，可对照两个标准：不低于本单位相同岗位最低档工资或劳动合同约定工资的80%，且不低于当地最低工资标准（《中华人民共和国劳动合同法》第二十条）。\n- 若单位约定的试用期本身违法且已实际履行，可就超过法定试用期的期间主张赔偿金，标准为试用期满月工资（《中华人民共和国劳动合同法》第八十三条）。\n- 关于“完全不支付工资”情形下的具体救济程序、投诉材料清单等，现有资料未涉及，建议向当地劳动监察部门咨询或申请劳动仲裁。\n\n以上分析仅供参考，具体以裁判机关认定为准。",
+      "should_refuse": false,
+      "observed_refused": false,
+      "identity_mode": "scoped",
+      "cache_hit": null,
+      "cache_false_hit": null,
+      "checks": {
+        "rewrite": false,
+        "rewrite_self_contained": true,
+        "slot": true,
+        "citation": true,
+        "refusal": true,
+        "cache_false_hit": null
+      },
+      "failures": [
+        "rewrite_mismatch: '试用期工资是否应当支付，用人单位以试用期为由不支付工资是否合法' != '试用期不支付工资是否合法'"
+      ]
+    },
+    {
+      "session_id": "mt_hold_rewrite",
+      "dataset_version": "2026-11-11.1",
+      "split": "holdout",
+      "tenant_id": "default",
+      "kb_ids": [
+        "kb_labor"
+      ],
+      "turn": 2,
+      "query": "那转正后还是这个数呢",
+      "observed_standalone": "试用期结束后转正工资标准如何确定，用人单位是否可以维持试用期工资不变",
+      "expected_standalone": "转正后工资是否仍按试用期标准",
+      "observed_refs": [
+        "中华人民共和国劳动合同法#第二十条",
+        "中华人民共和国劳动合同法#第八十三条",
+        "中华人民共和国劳动合同法#第十九条"
+      ],
+      "expected_refs": [
+        "中华人民共和国劳动合同法#第三十条"
+      ],
+      "turn_recall": 0.0,
+      "subquery_recall": null,
+      "intent": "labor_law",
+      "rewrite_type": "history",
+      "route": "hybrid",
+      "hit_count": 3,
+      "valid": true,
+      "retrieval_error": "",
+      "generation_error": "",
+      "answer": "转正后工资标准以劳动合同约定为准；用人单位不能仅以“转正”为由随意压低，但也不能在无约定的情况下单方维持试用期工资——关键看合同怎么约定。\n\n**依据如下：**\n\n1. 试用期工资只是下限约束，转正工资应按约定执行：劳动者在试用期的工资不得低于本单位相同岗位最低档工资或者劳动合同约定工资的百分之八十，并不得低于用人单位所在地的最低工资标准（《中华人民共和国劳动合同法》第二十条）。该条表明“劳动合同约定工资”是基准，试用期工资是其80%的下限，转正后应回到约定工资标准。\n\n2. 试用期包含在劳动合同期限内，仅约定试用期的，该期限即为劳动合同期限：试用期包含在劳动合同期限内；劳动合同仅约定试用期的，试用期不成立，该期限为劳动合同期限（《中华人民共和国劳动合同法》第十九条）。因此不存在“试用期单独一套工资、转正另算”的当然规则，工资标准应依劳动合同确定。\n\n**实务提示：**\n\n- 核对劳动合同中约定的工资数额：若合同约定了转正后工资，单位应按约定支付；若合同只写了试用期工资而未约定转正工资，可参照同岗位最低档工资或合同约定工资的80%下限判断是否足额（《中华人民共和国劳动合同法》第二十条）。\n- 若合同仅约定试用期而未约定正式期限，该“试用期”不成立，直接视为劳动合同期限，工资应按劳动合同期限对应的约定执行（《中华人民共和国劳动合同法》第十九条）。\n- 关于转正工资调整的具体程序、调薪争议的举证与仲裁流程，现有资料未涉及，建议向当地劳动监察部门咨询或申请劳动仲裁。\n\n以上分析仅供参考，具体以裁判机关认定为准。",
+      "should_refuse": false,
+      "observed_refused": false,
+      "identity_mode": "scoped",
+      "cache_hit": null,
+      "cache_false_hit": null,
+      "checks": {
+        "rewrite": false,
+        "rewrite_self_contained": true,
+        "slot": true,
+        "citation": false,
+        "refusal": true,
+        "cache_false_hit": null
+      },
+      "failures": [
+        "rewrite_mismatch: '试用期结束后转正工资标准如何确定，用人单位是否可以维持试用期工资不变' != '转正后工资是否仍按试用期标准'",
+        "retrieval_miss: 0.00",
+        "citation_miss"
+      ]
+    },
+    {
+      "session_id": "mt_hold_cache_default",
+      "dataset_version": "2026-11-11.1",
+      "split": "holdout",
+      "tenant_id": "default",
+      "kb_ids": [
+        "kb_labor"
+      ],
+      "turn": 1,
+      "query": "标准工时制下加班费如何计算",
+      "observed_standalone": "标准工时制下加班费的计算标准和计算方法",
+      "expected_standalone": "标准工时制下加班费如何计算",
+      "observed_refs": [
+        "中华人民共和国劳动合同法#第三十一条",
+        "中华人民共和国劳动合同法#第六十八条",
+        "中华人民共和国劳动合同法#第七十二条",
+        "中华人民共和国劳动法#第四十四条",
+        "中华人民共和国劳动法#第三十六条"
+      ],
+      "expected_refs": [
+        "中华人民共和国劳动合同法#第四十四条"
+      ],
+      "turn_recall": 0.0,
+      "subquery_recall": null,
+      "intent": "labor_law",
+      "rewrite_type": "direct",
+      "route": "hybrid",
+      "hit_count": 5,
+      "valid": true,
+      "retrieval_error": "",
+      "generation_error": "",
+      "answer": "你问的是标准工时制下加班费怎么算。结论先说：标准工时制下，加班费按加班发生的时段分三档计算——工作日延长工作时间按不低于工资的150%，休息日加班又不能补休的按不低于200%，法定休假日加班按不低于300%；计算基数为\"正常工作时间工资\"。\n\n**一、三档计算标准**\n\n有下列情形之一的，用人单位应当按照下列标准支付高于劳动者正常工作时间工资的工资报酬：（一）安排劳动者延长工作时间的，支付不低于工资的百分之一百五十的工资报酬；（二）休息日安排劳动者工作又不能安排补休的，支付不低于工资的百分之二百的工资报酬；（三）法定休假日安排劳动者工作的，支付不低于工资的百分之三百的工资报酬。（《中华人民共和国劳动法》第四十四条）\n\n**二、标准工时制的基础工时**\n\n国家实行劳动者每日工作时间不超过八小时、平均每周工作时间不超过四十四小时的工时制度。（《中华人民共和国劳动法》第三十六条）超出这一工时范围、由用人单位安排工作的，即落入上述第四十四条的适用情形。\n\n**三、计算公式与变量说明**\n\n- 工作日延长工作时间加班费 = 小时工资基数 × 150% × 延长工作小时数\n- 休息日加班费（不能安排补休）= 小时工资基数 × 200% × 休息日工作小时数\n- 法定休假日加班费 = 小时工资基数 × 300% × 法定休假日工作小时数\n- 小时工资基数 = 正常工作时间工资 ÷ 月计薪小时数（具体折算方式现有资料未涉及，需按当地规定或用人单位依法制定的工资制度确定）\n\n**四、实务提示**\n\n1. 用人单位应当严格执行劳动定额标准，不得强迫或者变相强迫劳动者加班；安排加班的，应当按照国家有关规定向劳动者支付加班费。（《中华人民共和国劳动合同法》第三十一条）\n2. 休息日加班与法定休假日加班的处理不同：休息日加班在\"不能安排补休\"时才按200%支付，法定休假日加班则直接适用300%标准，资料中未规定法定休假日加班可以用补休替代。（《中华人民共和国劳动法》第四十四条）\n3. 若你的用工形式实际是\"以小时计酬为主、一般平均每日不超过四小时、每周累计不超过二十四小时\"，则属于非全日制用工，其报酬结算支付周期最长不得超过十五日，小时计酬不得低于当地最低小时工资标准，与上述标准工时制加班费规则不同，需先确认自己的用工形式。（《中华人民共和国劳动合同法》第六十八条、第七十二条）\n\n以上分析仅供参考，具体以裁判机关认定为准。",
+      "should_refuse": false,
+      "observed_refused": false,
+      "identity_mode": "scoped",
+      "cache_hit": false,
+      "cache_false_hit": null,
+      "checks": {
+        "rewrite": false,
+        "rewrite_self_contained": true,
+        "slot": true,
+        "citation": true,
+        "refusal": true,
+        "cache_false_hit": null
+      },
+      "failures": [
+        "rewrite_mismatch: '标准工时制下加班费的计算标准和计算方法' != '标准工时制下加班费如何计算'",
+        "retrieval_miss: 0.00"
+      ]
+    },
+    {
+      "session_id": "mt_hold_cache_acme",
+      "dataset_version": "2026-11-11.1",
+      "split": "holdout",
+      "tenant_id": "acme",
+      "kb_ids": [
+        "kb_labor"
+      ],
+      "turn": 1,
+      "query": "标准工时制下加班费如何计算",
+      "observed_standalone": "标准工时制下加班费如何计算",
+      "expected_standalone": "标准工时制下加班费如何计算",
+      "observed_refs": [
+        "中华人民共和国劳动合同法#第三十一条",
+        "中华人民共和国劳动合同法#第六十八条",
+        "中华人民共和国劳动合同法#第七十二条"
+      ],
+      "expected_refs": [
+        "中华人民共和国劳动合同法#第四十四条"
+      ],
+      "turn_recall": 0.0,
+      "subquery_recall": null,
+      "intent": "labor_law",
+      "rewrite_type": "direct",
+      "route": "hybrid",
+      "hit_count": 3,
+      "valid": true,
+      "retrieval_error": "",
+      "generation_error": "",
+      "answer": "你问的是标准工时制下加班费怎么算。现有资料只涉及“用人单位安排加班应当支付加班费”这一原则，以及非全日制用工的工时和结算规则，**没有**标准工时制加班费的具体计算比例和公式，因此无法给出完整算法。\n\n**依据：**\n\n用人单位应当严格执行劳动定额标准，不得强迫或者变相强迫劳动者加班；用人单位安排加班的，应当按照国家有关规定向劳动者支付加班费（《中华人民共和国劳动合同法》第三十一条）。\n\n非全日制用工，是指以小时计酬为主，劳动者在同一用人单位一般平均每日工作时间不超过四小时，每周工作时间累计不超过二十四小时的用工形式（《中华人民共和国劳动合同法》第六十八条）。非全日制用工小时计酬标准不得低于用人单位所在地人民政府规定的最低小时工资标准，劳动报酬结算支付周期最长不得超过十五日（《中华人民共和国劳动合同法》第七十二条）。\n\n**实务提示：**\n\n1. 资料只确立了“安排加班应支付加班费”的原则（《中华人民共和国劳动合同法》第三十一条），具体到标准工时制下平时、休息日、法定节假日分别按什么倍数计算，现有资料未涉及，建议向当地劳动监察部门咨询或申请劳动仲裁时一并核实。\n2. 如果你实际属于非全日制用工（每日一般不超四小时、每周累计不超二十四小时），则适用小时计酬不低于当地最低小时工资标准、结算周期最长十五日的规定（《中华人民共和国劳动合同法》第六十八条、第七十二条），这与标准工时制的加班费规则不同，需先确认自己的用工形式。\n\n以上分析仅供参考，具体以裁判机关认定为准。",
+      "should_refuse": false,
+      "observed_refused": false,
+      "identity_mode": "scoped",
+      "cache_hit": false,
+      "cache_false_hit": null,
+      "checks": {
+        "rewrite": true,
+        "rewrite_self_contained": true,
+        "slot": true,
+        "citation": false,
+        "refusal": true,
+        "cache_false_hit": null
+      },
+      "failures": [
+        "retrieval_miss: 0.00",
+        "citation_miss"
+      ]
+    }
+  ],
+  "failed_sessions": {
+    "mt_dev_rewrite": [
+      {
+        "turn": 1,
+        "query": "我上个月被公司辞退了，能拿赔偿吗？",
+        "failures": [
+          "rewrite_mismatch: '用人单位违法解除劳动合同，劳动者能否要求支付赔偿金，赔偿金标准为经济补偿的二倍' != '被公司辞退可以拿到什么赔偿'",
+          "retrieval_miss: 0.00",
+          "citation_miss"
+        ]
+      },
+      {
+        "turn": 2,
+        "query": "那如果是我主动辞职呢？",
+        "failures": [
+          "rewrite_mismatch: '劳动者主动辞职（本人提出解除劳动合同）能否获得经济补偿' != '主动辞职是否有经济补偿'",
+          "retrieval_miss: 0.00"
+        ]
+      },
+      {
+        "turn": 3,
+        "query": "工资按8000算，N+1是多少？",
+        "failures": [
+          "rewrite_mismatch: '经济补偿金及代通知金（N+1）的计算方式，月工资8000元时如何计算' != '月工资8000元时N+1经济补偿如何计算'"
+        ]
+      }
+    ],
+    "mt_dev_slot": [
+      {
+        "turn": 1,
+        "query": "我在北京工作，公司没给我缴社保怎么办",
+        "failures": [
+          "rewrite_mismatch: '用人单位未依法为劳动者缴纳社会保险费，劳动者可以要求补缴或解除劳动合同并主张经济补偿的法律规定' != '北京公司未缴纳社保如何维权'",
+          "slot_missing: region"
+        ]
+      },
+      {
+        "turn": 2,
+        "query": "那上海呢",
+        "failures": [
+          "rewrite_mismatch: '上海地区用人单位未依法缴纳社保，劳动者解除劳动合同并主张经济补偿的规定' != '上海公司未缴纳社保如何维权'"
+        ]
+      }
+    ],
+    "mt_dev_multi": [
+      {
+        "turn": 1,
+        "query": "拖欠工资和没签合同分别怎么维权",
+        "failures": [
+          "rewrite_mismatch: '用人单位拖欠工资，劳动者如何维权（投诉、仲裁、支付令），用人单位未与劳动者签订书面劳动合同，劳动者如何主张二倍工资及维权途径' != '拖欠工资怎么维权，未签劳动合同怎么维权'",
+          "retrieval_miss: 0.50",
+          "citation_miss"
+        ]
+      }
+    ],
+    "mt_dev_refusal": [
+      {
+        "turn": 1,
+        "query": "火星上的公司适用中国劳动法吗",
+        "failures": [
+          "rewrite_mismatch: '中国劳动法是否适用于在火星注册的公司及其劳动关系' != '火星上的公司是否适用中国劳动法'",
+          "refusal_mismatch: expected=True observed=False"
+        ]
+      }
+    ],
+    "mt_dev_cache_labor": [
+      {
+        "turn": 1,
+        "query": "试用期最长可以约定多久",
+        "failures": [
+          "rewrite_mismatch: '劳动合同法对试用期最长可以约定多久的规定' != '试用期最长可以约定多久'"
+        ]
+      }
+    ],
+    "mt_dev_cache_civil": [
+      {
+        "turn": 1,
+        "query": "试用期最长可以约定多久",
+        "failures": [
+          "rewrite_mismatch: '劳动合同法对试用期最长期限的规定' != '试用期最长可以约定多久'",
+          "retrieval_miss: 0.00",
+          "citation_miss",
+          "refusal_mismatch: expected=False observed=True"
+        ]
+      }
+    ],
+    "mt_dev_kb_switch": [
+      {
+        "turn": 1,
+        "query": "竞业限制最长几年",
+        "failures": [
+          "rewrite_mismatch: '竞业限制期限最长不得超过几年' != '竞业限制期限最长几年'"
+        ]
+      },
+      {
+        "turn": 2,
+        "query": "民法典合同编对格式条款有什么限制",
+        "failures": [
+          "rewrite_mismatch: '民法典合同编对格式条款的限制规定' != '民法典合同编对格式条款有什么限制'"
+        ]
+      }
+    ],
+    "mt_hold_rewrite": [
+      {
+        "turn": 1,
+        "query": "公司说试用期不给工资，合法吗",
+        "failures": [
+          "rewrite_mismatch: '试用期工资是否应当支付，用人单位以试用期为由不支付工资是否合法' != '试用期不支付工资是否合法'"
+        ]
+      },
+      {
+        "turn": 2,
+        "query": "那转正后还是这个数呢",
+        "failures": [
+          "rewrite_mismatch: '试用期结束后转正工资标准如何确定，用人单位是否可以维持试用期工资不变' != '转正后工资是否仍按试用期标准'",
+          "retrieval_miss: 0.00",
+          "citation_miss"
+        ]
+      }
+    ],
+    "mt_hold_cache_default": [
+      {
+        "turn": 1,
+        "query": "标准工时制下加班费如何计算",
+        "failures": [
+          "rewrite_mismatch: '标准工时制下加班费的计算标准和计算方法' != '标准工时制下加班费如何计算'",
+          "retrieval_miss: 0.00"
+        ]
+      }
+    ],
+    "mt_hold_cache_acme": [
+      {
+        "turn": 1,
+        "query": "标准工时制下加班费如何计算",
+        "failures": [
+          "retrieval_miss: 0.00",
+          "citation_miss"
+        ]
+      }
+    ]
+  }
+}
