@@ -184,6 +184,7 @@ def retrieve(
 
     reranked = False
     rescued_mode = False
+    rerank_started = time.perf_counter()
     if use_rerank and candidates:
         # 重排前按法条（parent）预去重：同条多子块重复送 cross-encoder 既浪费算力，
         # 半句子块也容易误导打分。每条只保留融合分最高的子块。
@@ -257,6 +258,7 @@ def retrieve(
                 "法域过滤低置信回退：top1 重排分 %.3f < %.2f，无过滤重查合并 → %d 条候选",
                 top1, s.retrieval_law_rescue_score, len(candidates),
             )
+    rerank_ms = int((time.perf_counter() - rerank_started) * 1000) if reranked else 0
 
     hits = hybrid.dedupe_by_parent(candidates, topk=resolved_topk)
     kb_versions: dict = {}
@@ -300,6 +302,7 @@ def retrieve(
             "mode_rescued": rescued_mode,
             "effective_as_of": as_of,
             "kb_versions": kb_versions,
+            "rerank_ms": rerank_ms,
         },
     )
 
@@ -539,6 +542,16 @@ def retrieve_multi(
             settings=s,
         )
 
+    kb_versions: dict[str, dict[str, int]] = {}
+    for hit in hits:
+        if hit.kb_id and hit.kb_id not in kb_versions:
+            kb_versions[hit.kb_id] = {
+                "corpus_version": int(hit.corpus_version or 0),
+                "index_version": int(hit.index_version or 0),
+            }
+    rerank_ms = sum(
+        int((getattr(r, "debug", None) or {}).get("rerank_ms", 0) or 0) for r in results
+    )
     elapsed = int((time.perf_counter() - started) * 1000)
     logger.info(
         "多子查询检索完成：查询 %d 路 × topK=%d → 交错融合 %d 条法条 → 截断 %d 条"
@@ -562,5 +575,9 @@ def retrieve_multi(
             "retrieval_mode": mode,
             "ref_expansion": bool(getattr(s, "retrieval_ref_expansion", False)),
             "refs_added": refs_added,
+            "mode": "multi",
+            "kb_ids": list(kb_ids or []),
+            "kb_versions": kb_versions,
+            "rerank_ms": rerank_ms,
         },
     )

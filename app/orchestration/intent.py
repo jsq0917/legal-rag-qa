@@ -18,6 +18,7 @@ import hashlib
 import json
 import re
 import time
+from dataclasses import replace
 from typing import Any, Sequence
 
 from app.core.logger import get_logger
@@ -131,27 +132,57 @@ def _validate(data: dict, query: str) -> IntentResult:
     """把 LLM 原始 JSON 校正为合法的 :class:`IntentResult`。
 
     非法字段不抛错，逐一回落到安全默认值——单字段抽风不应让整次识别失败。
+    但每个回落都记录一条 ``schema:*`` / ``business:*`` 问题，用于区分
+    "JSON 解析失败"与"字段语义不合法"。
     """
+    issues: list[str] = []
+    if "intent" not in data:
+        issues.append("schema:missing_intent")
     intent = data.get("intent")
-    intent = intent if intent in INTENT_LABELS else "general"
+    if intent not in INTENT_LABELS:
+        if intent is not None:
+            issues.append(f"business:unknown_intent={intent!r}")
+        intent = "general"
 
+    if "rewrite_type" not in data:
+        issues.append("schema:missing_rewrite_type")
     rewrite_type = data.get("rewrite_type")
-    rewrite_type = rewrite_type if rewrite_type in REWRITE_TYPES else "direct"
+    if rewrite_type not in REWRITE_TYPES:
+        if rewrite_type is not None:
+            issues.append(f"business:unknown_rewrite_type={rewrite_type!r}")
+        rewrite_type = "direct"
 
+    if "complexity" not in data:
+        issues.append("schema:missing_complexity")
     complexity = data.get("complexity")
-    complexity = complexity if complexity in COMPLEXITIES else "medium"
+    if complexity not in COMPLEXITIES:
+        if complexity is not None:
+            issues.append(f"business:unknown_complexity={complexity!r}")
+        complexity = "medium"
 
-    sub_queries = _coerce_sub_queries(data.get("sub_queries"), query)
+    raw_sub_queries = data.get("sub_queries")
+    if raw_sub_queries is not None and not isinstance(raw_sub_queries, (list, str)):
+        issues.append(f"schema:bad_sub_queries_type={type(raw_sub_queries).__name__}")
+    sub_queries = _coerce_sub_queries(raw_sub_queries, query)
 
-    hit_structured = bool(data.get("hit_structured"))
+    raw_hit = data.get("hit_structured")
+    if raw_hit is not None and not isinstance(raw_hit, bool):
+        issues.append(f"schema:bad_hit_structured_type={type(raw_hit).__name__}")
+    hit_structured = bool(raw_hit)
     topic = data.get("structured_topic")
     if topic not in STRUCTURED_TOPICS:
         topic = None
         # topic 不在枚举内时不能声称命中
-        if hit_structured and data.get("structured_topic"):
+        if raw_hit and data.get("structured_topic"):
+            issues.append(f"business:unknown_structured_topic={data.get('structured_topic')!r}")
             logger.warning("LLM 返回未知 structured_topic=%r，按未命中处理", data.get("structured_topic"))
 
-    law_hints = [law for law in (data.get("law_hints") or []) if law in ALL_LAWS]
+    raw_hints = data.get("law_hints")
+    if raw_hints is not None and not isinstance(raw_hints, list):
+        issues.append(f"schema:bad_law_hints_type={type(raw_hints).__name__}")
+    law_hints = [law for law in (raw_hints or []) if law in ALL_LAWS]
+    if isinstance(raw_hints, list) and len(law_hints) != len(raw_hints):
+        issues.append(f"business:unknown_law_hints={[law for law in raw_hints if law not in ALL_LAWS]!r}")
     if intent in {"labor_law", "civil_code", "general"} and not law_hints:
         # LLM 漏给 law_hints：按 intent 兜底，避免检索范围失控
         from app.orchestration.intent_rules import rule_law_hints
@@ -169,6 +200,7 @@ def _validate(data: dict, query: str) -> IntentResult:
         need_history=bool(data.get("need_history")),
         source="llm",
         raw=data,
+        validation_errors=issues,
     )
 
 
@@ -181,10 +213,18 @@ def _recognize_via_llm(
 ) -> IntentResult:
     messages = _build_messages(query, history, max_turns)
     resp = client.chat(messages, json_mode=True, temperature=0.1)
-    data = json.loads(_strip_json_fences(resp.content))
+    try:
+        data = json.loads(_strip_json_fences(resp.content))
+    except json.JSONDecodeError as exc:
+        # 解析失败是"坏输出"，与"字段值不合法"分开：前者触发规则兜底/重试，
+        # 后者只回落默认值并把 business:* 记进 validation_errors。
+        raise LLMResponseError(f"意图 JSON 解析失败: {exc}", kind="parse_error") from exc
     if not isinstance(data, dict):
-        raise LLMResponseError(f"LLM JSON 顶层不是对象: {type(data).__name__}")
-    return _validate(data, query)
+        raise LLMResponseError(
+            f"意图 JSON 顶层不是对象: {type(data).__name__}", kind="parse_error"
+        )
+    result = _validate(data, query)
+    return replace(result, token_usage=dict(resp.usage or {}), latency_ms=int(resp.latency_ms or 0))
 
 
 def _build_intent_client(
@@ -194,10 +234,24 @@ def _build_intent_client(
     timeout_s: float,
     max_retries: int,
     thinking: str,
+    *,
+    max_concurrency: int = 8,
+    circuit_fail_threshold: int = 5,
+    circuit_cooldown_s: float = 30.0,
 ) -> LLMClient:
     from app.generation.llm_client import _get_cached_client
 
-    return _get_cached_client(api_key, base_url, model, timeout_s, max_retries, thinking)
+    return _get_cached_client(
+        api_key,
+        base_url,
+        model,
+        timeout_s,
+        max_retries,
+        thinking,
+        max_concurrency=max_concurrency,
+        circuit_fail_threshold=circuit_fail_threshold,
+        circuit_cooldown_s=circuit_cooldown_s,
+    )
 
 
 def get_intent_client(settings: Settings | None = None) -> LLMClient:
@@ -215,6 +269,9 @@ def get_intent_client(settings: Settings | None = None) -> LLMClient:
         float(s.intent_timeout_s),
         s.intent_max_retries,
         s.llm_thinking or "",
+        max_concurrency=getattr(s, "llm_max_concurrency", 8),
+        circuit_fail_threshold=getattr(s, "llm_circuit_fail_threshold", 5),
+        circuit_cooldown_s=float(getattr(s, "llm_circuit_cooldown_s", 30)),
     )
 
 

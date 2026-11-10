@@ -137,6 +137,9 @@ def get_suggest_client(settings: Settings | None = None) -> LLMClient:
         float(s.suggest_timeout_s),
         s.suggest_max_retries,
         s.llm_thinking or "",
+        max_concurrency=getattr(s, "llm_max_concurrency", 8),
+        circuit_fail_threshold=getattr(s, "llm_circuit_fail_threshold", 5),
+        circuit_cooldown_s=float(getattr(s, "llm_circuit_cooldown_s", 30)),
     )
 
 

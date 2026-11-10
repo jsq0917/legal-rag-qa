@@ -24,6 +24,7 @@ from app.api.knowledge import router as knowledge_router
 from app.api.metrics import router as metrics_router
 from app.api.retrieval import router as retrieval_router
 from app.api.sessions import router as sessions_router
+from app.api.traces import router as trace_router
 from app.core.errors import register_exception_handlers
 from app.core.logger import get_logger, setup_logging, shutdown_logging
 from app.core.metrics import MetricsMiddleware, check_disk_watermark
@@ -143,6 +144,7 @@ def create_app() -> FastAPI:
     app.include_router(auth_router)
     app.include_router(sessions_router)
     app.include_router(chat_router)
+    app.include_router(trace_router)
 
     @app.get("/", tags=["meta"], summary="服务信息")
     async def root() -> dict:

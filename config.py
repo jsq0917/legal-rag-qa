@@ -112,6 +112,8 @@ class LLMConfig:
     default_model: str
     timeout_s: int
     max_retries: int
+    max_concurrency: int = 8
+    fallback_model: str = ""
 
 
 @dataclass(frozen=True)
@@ -252,6 +254,17 @@ class Settings(BaseSettings):
     llm_thinking: str = "disabled"  # 百炼 DeepSeek-V4/qwen3 默认开思考，须显式 disabled；空=不传（其他厂商）
     llm_timeout_s: int = Field(default=60, ge=5, le=600)
     llm_max_retries: int = Field(default=2, ge=0, le=5)
+    # 并发上限：进程内信号量，防止一次压测把上游配额打满
+    llm_max_concurrency: int = Field(default=8, ge=1, le=64)
+    # 熔断：连续 N 次失败后打开，冷却期内快速失败（确定性降级），避免雪崩
+    llm_circuit_fail_threshold: int = Field(default=5, ge=1, le=100)
+    llm_circuit_cooldown_s: int = Field(default=30, ge=1, le=600)
+    # 备用模型：生成链路首 token 前失败时改用该模型重试一次；空=不启用
+    llm_fallback_model: str = ""
+
+    # ---- Trace ----
+    trace_store_enabled: bool = True
+    trace_ttl_s: int = Field(default=7 * 86400, ge=60, le=90 * 86400)
 
     # ---- 意图识别（短超时，失败走规则兜底）----
     # 5s 而非设计初稿的 3s：关掉 thinking 后 DeepSeek 实测 p50≈1.0s / p95≈1.1s，
@@ -522,6 +535,8 @@ class Settings(BaseSettings):
             default_model=self.llm_default_model,
             timeout_s=self.llm_timeout_s,
             max_retries=self.llm_max_retries,
+            max_concurrency=self.llm_max_concurrency,
+            fallback_model=self.llm_fallback_model,
         )
 
     @property
@@ -646,6 +661,30 @@ LLM_API_KEY_ENV_NAMES: tuple[str, ...] = (
     "DEEPSEEK_API_KEY",
     "DASHSCOPE_API_KEY",
 )
+
+
+def validate_llm_config(settings: "Settings | None" = None) -> None:
+    """LLM 配置自检：非法直接抛 :class:`ConfigError`（fail-closed）。
+
+    只校验"一定会让调用失败/打到错误端点"的硬错误；超时/重试/并发等数值
+    已由 pydantic 字段约束兜住。缺 key 不在这里报——生成与意图对缺 key
+    的处理不同（前者明确提示管理员，后者规则兜底）。
+    """
+    s = settings or get_settings()
+    errors: list[str] = []
+    base_url = (s.llm_base_url or "").strip()
+    if not base_url.startswith(("http://", "https://")):
+        errors.append("LLM_BASE_URL 必须是 http(s) 开头的完整地址")
+    model = (s.llm_default_model or "").strip()
+    if not model:
+        errors.append("LLM_DEFAULT_MODEL 不能为空")
+    if any(ch in base_url + model for ch in "\r\n\t "):
+        errors.append("LLM_BASE_URL / LLM_DEFAULT_MODEL 不能包含空白字符")
+    fallback = (s.llm_fallback_model or "").strip()
+    if fallback and fallback == model:
+        errors.append("LLM_FALLBACK_MODEL 不能与 LLM_DEFAULT_MODEL 相同")
+    if errors:
+        raise ConfigError("LLM 配置非法：" + "；".join(errors))
 
 
 def get_llm_api_key() -> str:

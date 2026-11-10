@@ -35,6 +35,7 @@ from app.core.access import AccessScope, resolve_access_scope
 from app.core.ratelimit import check_rate_limit
 from app.core.security import CurrentUser, TokenError, get_current_user_optional
 from app.core.sse import SSE_HEADERS, SSE_MEDIA_TYPE
+from app.core.trace import Trace
 from app.db.mysql import session_scope
 from app.generation.stream import AnswerEngine
 from app.generation.suggestions import generate_suggestions
@@ -75,7 +76,9 @@ async def chat_stream(
     if payload.session_id and user is None:
         raise TokenError("会话模式需要登录")
 
-    scope = await run_in_threadpool(prepare_scope, user, payload.session_id, payload.kb_ids)
+    trace = Trace(user_id=user.id if user else None)
+    with trace.stage("scope"):
+        scope = await run_in_threadpool(prepare_scope, user, payload.session_id, payload.kb_ids)
 
     # 限流：匿名按 IP 20 次/分，登录按 uid 60 次/分（防 LLM 费用被刷爆）。
     # Redis 是同步客户端，必须入线程池——直接调用会在 Redis 抖动时（最坏 5s）
@@ -91,6 +94,7 @@ async def chat_stream(
         selected_kb_ids=payload.kb_ids,
         session_id=payload.session_id,
         scope=scope,
+        trace=trace,
     )
 
     async def event_stream():
@@ -103,7 +107,11 @@ async def chat_stream(
         finally:
             frames.close()
 
-    return StreamingResponse(event_stream(), media_type=SSE_MEDIA_TYPE, headers=SSE_HEADERS)
+    return StreamingResponse(
+        event_stream(),
+        media_type=SSE_MEDIA_TYPE,
+        headers={**SSE_HEADERS, "X-Trace-Id": trace.trace_id},
+    )
 
 
 # ---------------------------------------------------------------------------

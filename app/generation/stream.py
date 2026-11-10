@@ -31,6 +31,7 @@ from typing import Any, Callable, Iterator, Sequence
 from app.core.access import AccessScope, answer_identity
 from app.core.logger import get_logger
 from app.core.sse import sse_frame
+from app.core.trace import Trace
 from app.generation.context import (
     aggregate_sources,
     build_context_sources,
@@ -74,6 +75,9 @@ class StreamResult:
     persisted: bool = False
     #: 生成后引用校验结果（写进 SSE meta.citation_check，见 citations.py）
     citation_check: dict = field(default_factory=dict)
+    citation_check_ms: int = 0
+    #: 降级原因（如 ``llm_fallback:<model>``）；正常为 None
+    degraded: str | None = None
 
 
 def _meta_frame(
@@ -86,10 +90,12 @@ def _meta_frame(
     cached: bool,
     degraded: bool | str,
     citation_check: dict | None = None,
+    trace_id: str = "",
 ) -> str:
     """meta 帧统一构造：前端收到 meta 会整体覆盖，字段必须一次给全。"""
     payload = {
         "message_id": message_id,
+        "trace_id": trace_id,
         "intent": intent,
         "route": route,
         "rewrite_type": rewrite_type,
@@ -148,6 +154,7 @@ class AnswerEngine:
         selected_kb_ids: list[str] | None = None,
         session_id: str | None = None,
         scope: AccessScope | None = None,
+        trace: Trace | None = None,
     ) -> Iterator[str]:
         """产出 SSE 帧（``event: X\\ndata: {...}\\n\\n``）。"""
         s = self.settings
@@ -158,6 +165,16 @@ class AnswerEngine:
         plan: QueryPlan | None = None
         query = (query or "").strip()
         scope = scope or AccessScope.legacy_all()
+        trace = trace or Trace()
+        trace.user_id = scope.user_id
+        trace.record(
+            "request",
+            kb_ids=list(scope.kb_ids),
+            requested=list(scope.requested_kb_ids),
+            denied=list(scope.denied_kb_ids),
+            tenant_id=scope.tenant_id,
+            role=scope.role,
+        )
         identity = self._answer_identity(scope)
         # 客户端勾选只能缩小范围；最终检索范围一律由 scope 决定。
         effective_kb_ids = scope.restrict(selected_kb_ids)
@@ -178,28 +195,38 @@ class AnswerEngine:
                     complexity="simple",
                     cached=False,
                     degraded=False,
+                    trace_id=trace.trace_id,
                 )
                 yield from self._replay_fixed(NO_DATA_REPLY, gen_cfg.replay_chunk_chars, result, started)
-                yield self._done_frame(result, started)
+                yield self._done_frame(result, started, trace.trace_id)
                 return
 
             # ---- 0.5) 答案级缓存前置：整段回答直接回放 ----
             # key 由「问题 + 租户/知识库/版本/模型/prompt/as-of」共同决定，
             # 同一句话换库、换租户、换索引版本都不会互相回放。
+            cache_started = time.perf_counter()
             cached_answer = self.answer_cache.lookup(
                 query,
                 history=list(history) if history else None,
                 cache_identity=identity,
             )
+            trace.record(
+                "cache_lookup",
+                latency_ms=int((time.perf_counter() - cache_started) * 1000),
+                layer="answer",
+                hit=cached_answer is not None,
+                identity=identity,
+            )
             if cached_answer is not None:
                 yield from self._answer_replay(
-                    cached_answer, result, gen_cfg, started, message_id, scope
+                    cached_answer, result, gen_cfg, started, message_id, scope, trace
                 )
-                yield self._done_frame(result, started)
+                yield self._done_frame(result, started, trace.trace_id)
                 return
 
             # ---- 意图 + 路由 + 结构化判定（阶段 4 编排入口，含 LLM 降级）----
             yield sse_frame("stage", {"stage": "intent"})
+            intent_started = time.perf_counter()
             plan = analyze_query(
                 query,
                 history=list(history) if history else None,
@@ -209,6 +236,27 @@ class AnswerEngine:
                 scope=scope,
             )
             route = plan.route.route
+            trace.record(
+                "intent",
+                latency_ms=int((time.perf_counter() - intent_started) * 1000),
+                source=plan.intent.source,
+                intent=plan.intent.intent,
+                rewrite_type=plan.intent.rewrite_type,
+                complexity=plan.intent.complexity,
+                model=s.llm_default_model,
+                prompt_version=self._intent_prompt_version(),
+                tokens=plan.intent.token_usage or {},
+                degraded=bool(plan.degraded),
+                validation_errors=list(plan.intent.validation_errors),
+            )
+            trace.record(
+                "route",
+                latency_ms=0,
+                measured_with="intent",
+                route=route,
+                kb_ids=list(plan.route.kb_ids),
+                reason=plan.route.reason,
+            )
 
             yield _meta_frame(
                 message_id,
@@ -218,18 +266,19 @@ class AnswerEngine:
                 complexity=plan.intent.complexity,
                 cached=False,
                 degraded=plan.degraded,
+                trace_id=trace.trace_id,
             )
 
             # ---- 分支 A：问候 → 固定话术，不调 LLM ----
             if route == "greeting":
                 yield from self._replay_fixed(GREETING_REPLY, gen_cfg.replay_chunk_chars, result, started)
-                yield self._done_frame(result, started)
+                yield self._done_frame(result, started, trace.trace_id)
                 return
 
             # ---- 分支 B：纯结构化 → 标准答案回放，不碰 Milvus / 不调 LLM ----
             if route == "pure_structured":
                 yield from self._structured_replay(plan, result, gen_cfg, started)
-                yield self._done_frame(result, started)
+                yield self._done_frame(result, started, trace.trace_id)
                 return
 
             # ---- 分支 B2：无数据（知识库不匹配/与法律无关）→ 引导话术，
@@ -237,13 +286,31 @@ class AnswerEngine:
             if route == "no_data":
                 logger.info("路由 no_data：引导话术 q=%.40s reason=%s", query, plan.route.reason)
                 yield from self._replay_fixed(NO_DATA_REPLY, gen_cfg.replay_chunk_chars, result, started)
-                yield self._done_frame(result, started)
+                yield self._done_frame(result, started, trace.trace_id)
                 return
 
             # ---- 分支 C：检索（pure_vector / hybrid / cross_law）----
             yield sse_frame("stage", {"stage": "retrieval"})
-            hits, degraded = self._retrieve(plan, s, scope)
+            retrieve_started = time.perf_counter()
+            hits, degraded, retrieve_debug = self._retrieve(plan, s, scope)
+            retrieve_ms = int((time.perf_counter() - retrieve_started) * 1000)
             hits = self._filter_hits(hits, scope)
+            trace.record(
+                "retrieve",
+                latency_ms=retrieve_ms,
+                hits=len(hits),
+                mode=retrieve_debug.get("mode", ""),
+                kb_ids=retrieve_debug.get("kb_ids", []),
+                kb_versions=retrieve_debug.get("kb_versions", {}),
+                reranked=bool(retrieve_debug.get("reranked", False)),
+                degraded=degraded or "",
+            )
+            trace.record(
+                "rerank",
+                latency_ms=int(retrieve_debug.get("rerank_ms", 0) or 0),
+                reranked=bool(retrieve_debug.get("reranked", False)),
+                candidates=int(retrieve_debug.get("candidates", 0) or 0),
+            )
             if degraded:
                 # 第 5 层容错：Milvus 故障 → 追加一条 meta 告知前端降级状态
                 logger.warning("Milvus 检索不可用，按 vector_unavailable 降级回答")
@@ -255,6 +322,7 @@ class AnswerEngine:
                     complexity=plan.intent.complexity,
                     cached=False,
                     degraded="vector_unavailable",
+                    trace_id=trace.trace_id,
                 )
 
             if hits:
@@ -280,7 +348,7 @@ class AnswerEngine:
             if not result.sources:
                 logger.info("无资料可用，走引导话术 q=%.40s route=%s", query, route)
                 yield from self._replay_fixed(NO_DATA_REPLY, gen_cfg.replay_chunk_chars, result, started)
-                yield self._done_frame(result, started)
+                yield self._done_frame(result, started, trace.trace_id)
                 return
 
             context_sources = build_context_sources(
@@ -301,7 +369,26 @@ class AnswerEngine:
             yield sse_frame("stage", {"stage": "generate"})
 
             # ---- 流式生成（第 2/3 层容错）----
+            generate_started = time.perf_counter()
             yield from self._generate(messages, result, gen_cfg, started)
+            trace.record(
+                "generate",
+                latency_ms=int((time.perf_counter() - generate_started) * 1000),
+                ttft_ms=result.ttft_ms or 0,
+                model=s.llm_default_model,
+                prompt_version=PROMPT_VERSION,
+                tokens=result.token_usage or {},
+                cached=False,
+                degraded=result.degraded or "",
+                error=result.error or "",
+            )
+            trace.record(
+                "citation_check",
+                latency_ms=result.citation_check_ms,
+                enabled=bool(gen_cfg.citation_check),
+                unverified=len(result.citation_check.get("unverified", []) if result.citation_check else []),
+                error=result.error or "",
+            )
             if result.citation_check:
                 # 生成后才拿得到完整答案，此时再发一条「带全字段」的 meta：
                 # 前端收 meta 会整体覆盖，缺字段会清空 UI 元信息。
@@ -314,8 +401,9 @@ class AnswerEngine:
                     cached=False,
                     degraded=degraded or plan.degraded,
                     citation_check=result.citation_check,
+                    trace_id=trace.trace_id,
                 )
-            yield self._done_frame(result, started)
+            yield self._done_frame(result, started, trace.trace_id)
 
         except LLMStreamInterrupted as exc:
             # 第 3 层：断流保留 partial（delta 已在 _generate 内产出）
@@ -324,7 +412,7 @@ class AnswerEngine:
             yield sse_frame(
                 "error", {"code": "stream_interrupted", "message": str(exc)[:200], "retriable": True}
             )
-            yield self._done_frame(result, started)
+            yield self._done_frame(result, started, trace.trace_id)
         except ConfigError as exc:
             # 缺 DASHSCOPE_API_KEY：明确的错误码，前端可引导用户/管理员去配 key
             result.error = f"llm_not_configured: {exc}"
@@ -332,22 +420,56 @@ class AnswerEngine:
             yield sse_frame(
                 "error", {"code": "llm_not_configured", "message": "生成服务未配置 API Key，请联系管理员", "retriable": False}
             )
-            yield self._done_frame(result, started)
+            yield self._done_frame(result, started, trace.trace_id)
         except LLMError as exc:
             # 第 2 层：重试后仍失败
             result.error = f"llm_error: {exc}"
             logger.warning("生成失败：%s", str(exc)[:200])
             yield sse_frame("error", {"code": "llm_error", "message": str(exc)[:200], "retriable": True})
-            yield self._done_frame(result, started)
+            yield self._done_frame(result, started, trace.trace_id)
         except Exception as exc:  # noqa: BLE001 - 顶层兜底：链路绝不能裸奔
             result.error = f"internal_error: {exc}"
             logger.exception("问答链路未捕获异常")
             yield sse_frame("error", {"code": "internal_error", "message": "服务内部错误", "retriable": False})
-            yield self._done_frame(result, started)
+            yield self._done_frame(result, started, trace.trace_id)
         finally:
             # 第 4 层：客户端断开（GeneratorExit）或任何路径，finally 保证落库一次
+            cache_write_started = time.perf_counter()
             self._cache_answer(query, result, plan, identity=identity, scope=scope)
+            trace.record(
+                "answer_cache_write",
+                latency_ms=int((time.perf_counter() - cache_write_started) * 1000),
+                hit=result.cached,
+                error=result.error or "",
+            )
+            persist_started = time.perf_counter()
             self._persist(session_id, query, result, plan)
+            trace.record(
+                "persistence",
+                latency_ms=int((time.perf_counter() - persist_started) * 1000),
+                persisted=bool(result.persisted and session_id),
+                error=result.error or "",
+            )
+            # 失败路径（意图/生成抛错）没有 generate 事件，这里补一条便于还原
+            if not any(e.get("stage") == "generate" for e in trace.events):
+                trace.record(
+                    "generate",
+                    latency_ms=0,
+                    model=s.llm_default_model,
+                    prompt_version=PROMPT_VERSION,
+                    cached=False,
+                    error=result.error or "aborted",
+                )
+            trace.record(
+                "done",
+                latency_ms=0,
+                ok=not bool(result.error),
+                ttft_ms=result.ttft_ms or 0,
+                total_ms=int((time.perf_counter() - started) * 1000),
+                cached=result.cached,
+            )
+            trace.log()
+            trace.save()
 
     # ------------------------------------------------------------------
     # 内部步骤
@@ -357,7 +479,7 @@ class AnswerEngine:
         plan: QueryPlan,
         settings: Settings,
         scope: AccessScope | None = None,
-    ) -> tuple[list, str | None]:
+    ) -> tuple[list, str | None, dict]:
         """检索：按意图改写类型选路。
 
         - ``rewrite_type == "decompose"``（多跳拆解）→ ``retrieve_multi`` 并行
@@ -374,7 +496,7 @@ class AnswerEngine:
         # 路由给出的 kb_ids 再收敛一次：即使路由层被注入/越权，也不会扩大范围。
         route_kb_ids = list(plan.route.kb_ids) if scope is None else scope.restrict(plan.route.kb_ids)
         if scope is not None and scope.has_grants and not route_kb_ids:
-            return [], None
+            return [], None, {}
         if scope is not None and scope.has_grants:
             route_kb_ids = route_kb_ids or list(scope.kb_ids)
 
@@ -404,10 +526,10 @@ class AnswerEngine:
                     route=plan.route.route,
                     settings=settings,
                 )
-            return res.hits, None
+            return res.hits, None, dict(getattr(res, "debug", None) or {})
         except Exception as exc:  # noqa: BLE001 - 检索故障降级，不打断链路
             logger.warning("检索失败，降级处理（%s: %s）", type(exc).__name__, str(exc)[:200])
-            return [], "vector_unavailable"
+            return [], "vector_unavailable", {}
 
     @staticmethod
     def _build_context(context_sources: Sequence, qa_hit, gen_cfg) -> str:
@@ -427,26 +549,63 @@ class AnswerEngine:
         return "\n\n".join(parts)
 
     def _generate(self, messages: list[dict], result: StreamResult, gen_cfg, started: float) -> Iterator[str]:
-        """流式生成：逐 chunk 产出 delta 帧，记录 TTFT（首 token）与用量。"""
+        """流式生成：逐 chunk 产出 delta 帧，记录 TTFT（首 token）与用量。
+
+        ``llm_fallback_model`` 配置且可用时，首个 token 前失败会换备用模型
+        重试一次；已产出内容后的失败不换模型（避免两段回答拼接错乱）。
+        """
         client = self._llm_client or self._default_llm_client()
-        for chunk in client.chat_stream(
-            messages,
-            temperature=gen_cfg.temperature,
-            max_tokens=gen_cfg.max_tokens,
-        ):
-            if chunk.usage:
-                result.token_usage = dict(chunk.usage)
-            if not chunk.text:
+        fallback = (self.settings.llm_fallback_model or "").strip()
+        attempt_models: list[str | None] = [None]
+        if fallback:
+            attempt_models.append(fallback)
+
+        last_exc: LLMError | None = None
+        for idx, model in enumerate(attempt_models):
+            produced_before = len(result.content)
+            try:
+                for chunk in client.chat_stream(
+                    messages,
+                    model=model,
+                    temperature=gen_cfg.temperature,
+                    max_tokens=gen_cfg.max_tokens,
+                ):
+                    if chunk.usage:
+                        result.token_usage = dict(chunk.usage)
+                    if not chunk.text:
+                        continue
+                    if result.ttft_ms is None:
+                        result.ttft_ms = int((time.perf_counter() - started) * 1000)
+                    result.content += chunk.text
+                    yield sse_frame("delta", {"text": chunk.text})
+            except LLMStreamInterrupted:
+                raise
+            except LLMError as exc:
+                last_exc = exc
+                can_fallback = (
+                    idx == 0
+                    and fallback
+                    and len(result.content) == produced_before
+                    and exc.kind != "circuit_open"
+                )
+                if not can_fallback:
+                    raise
+                result.degraded = f"llm_fallback:{fallback}"
+                logger.warning(
+                    "生成失败（%s），改用备用模型 %s 重试一次", exc.kind, fallback
+                )
                 continue
-            if result.ttft_ms is None:
-                result.ttft_ms = int((time.perf_counter() - started) * 1000)
-            result.content += chunk.text
-            yield sse_frame("delta", {"text": chunk.text})
+            break
+        else:
+            # 所有候选模型都失败（fallback 未配置时只会有一轮）
+            raise last_exc or LLMError("生成失败：无可用模型")
 
         # ---- 引用在线校验：答案里出现来源外的条号时补一行提示 ----
         if gen_cfg.citation_check:
+            check_started = time.perf_counter()
             check = check_citations(result.content, result.sources)
             result.citation_check = check
+            result.citation_check_ms = int((time.perf_counter() - check_started) * 1000)
             if check["unverified"]:
                 note = format_citation_note(check["unverified"])
                 result.content += note
@@ -460,8 +619,10 @@ class AnswerEngine:
         started: float,
         message_id: str,
         scope: AccessScope | None = None,
+        trace: Trace | None = None,
     ) -> Iterator[str]:
         """答案缓存命中：整段回放（保留打字机效果），不调意图/检索/LLM。"""
+        trace = trace or Trace()
         result.cached = True
         result.sources = self._filter_sources(cached.sources, scope)
         # 缓存里存的是「未补注」的原答案（写缓存时剔除），回放时按同一来源
@@ -482,6 +643,15 @@ class AnswerEngine:
             cached=True,
             degraded=False,
             citation_check=citation_check,
+            trace_id=trace.trace_id,
+        )
+        trace.record(
+            "generate",
+            latency_ms=0,
+            cached=True,
+            model=self.settings.llm_default_model,
+            prompt_version=PROMPT_VERSION,
+            token_usage={},
         )
         if result.sources:
             yield sse_frame("sources", {"sources": result.sources})
@@ -526,6 +696,12 @@ class AnswerEngine:
             )
         except Exception as exc:  # noqa: BLE001 - 缓存失败永不影响主链路
             logger.warning("答案缓存回写异常（已忽略）: %s", str(exc)[:200])
+
+    @staticmethod
+    def _intent_prompt_version() -> str:
+        from app.orchestration.intent import INTENT_PROMPT_VERSION
+
+        return INTENT_PROMPT_VERSION
 
     def _answer_identity(self, scope: AccessScope) -> str:
         s = self.settings
@@ -601,11 +777,12 @@ class AnswerEngine:
             yield sse_frame("delta", {"text": piece})
 
     @staticmethod
-    def _done_frame(result: StreamResult, started: float) -> str:
+    def _done_frame(result: StreamResult, started: float, trace_id: str = "") -> str:
         result.latency_ms = int((time.perf_counter() - started) * 1000)
         return sse_frame(
             "done",
             {
+                "trace_id": trace_id,
                 "ttft_ms": result.ttft_ms or 0,
                 "latency_ms": result.latency_ms,
                 "token_usage": result.token_usage or {},

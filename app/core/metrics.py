@@ -39,6 +39,8 @@ _HTTP_DURATION_SUM: dict[tuple[str, str], float] = defaultdict(float)
 _HTTP_DURATION_COUNT: dict[tuple[str, str], int] = defaultdict(int)
 #: (model, outcome) -> count
 _LLM_CALLS: dict[tuple[str, str], int] = defaultdict(int)
+#: (model, kind) -> count（统一错误分类，kind 见 llm_client.LLM_ERROR_KINDS）
+_LLM_FAILURES: dict[tuple[str, str], int] = defaultdict(int)
 #: reason -> count
 _RATE_LIMITED: dict[str, int] = defaultdict(int)
 #: resource -> count（越权拒绝；不含具体资源 id，避免日志/指标泄露）
@@ -64,6 +66,11 @@ def record_http_request(method: str, path: str, status: int, duration_s: float) 
         _HTTP_REQUESTS[key] += 1
         _HTTP_DURATION_SUM[(method.upper(), path)] += max(0.0, float(duration_s))
         _HTTP_DURATION_COUNT[(method.upper(), path)] += 1
+
+
+def record_llm_failure(model: str, kind: str) -> None:
+    """LLM 失败按统一错误分类计数（timeout/rate_limit/auth/…/circuit_open）。"""
+    _LLM_FAILURES[(model, kind)] = _LLM_FAILURES.get((model, kind), 0) + 1
 
 
 def record_llm_call(model: str, outcome: str) -> None:
@@ -262,6 +269,7 @@ def render_prometheus(
         duration_sum = dict(_HTTP_DURATION_SUM)
         duration_count = dict(_HTTP_DURATION_COUNT)
         llm_calls = dict(_LLM_CALLS)
+        llm_failures = dict(_LLM_FAILURES)
         rate_limited = dict(_RATE_LIMITED)
         permission_denied = dict(_PERMISSION_DENIED)
 
@@ -291,6 +299,12 @@ def render_prometheus(
     for (model, outcome), count in sorted(llm_calls.items()):
         lines.append(
             f"lawanswer_llm_calls_total{_labels({'model': model, 'outcome': outcome})} {count}"
+        )
+
+    _family(lines, "lawanswer_llm_failures_total", "counter", "LLM failures by unified error kind.")
+    for (model, kind), count in sorted(llm_failures.items()):
+        lines.append(
+            f"lawanswer_llm_failures_total{_labels({'model': model, 'kind': kind})} {count}"
         )
 
     _family(lines, "lawanswer_rate_limited_total", "counter", "Rejected requests by reason (chat rate limit / ingest queue).")
@@ -354,6 +368,7 @@ def reset_metrics() -> None:
         _HTTP_DURATION_SUM.clear()
         _HTTP_DURATION_COUNT.clear()
         _LLM_CALLS.clear()
+        _LLM_FAILURES.clear()
         _RATE_LIMITED.clear()
         _PERMISSION_DENIED.clear()
     with _dep_lock:

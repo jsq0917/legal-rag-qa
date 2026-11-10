@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import threading
 import time
 from dataclasses import dataclass, field
 from typing import Any, Iterator, Sequence
@@ -23,18 +24,43 @@ from openai import OpenAI
 from openai.types.chat import ChatCompletionMessageParam
 
 from app.core.logger import get_logger
-from app.core.metrics import record_llm_call
-from config import ConfigError, Settings, get_llm_api_key, get_settings
+from app.core.metrics import record_llm_call, record_llm_failure
+from config import ConfigError, Settings, get_llm_api_key, get_settings, validate_llm_config
 
 logger = get_logger("lawanswer.llm")
 
+#: 统一错误分类：日志/指标/trace 只用这些枚举，避免各调用点各写一套字符串
+LLM_ERROR_KINDS = (
+    "timeout",
+    "rate_limit",
+    "auth",
+    "bad_request",
+    "connection",
+    "server",
+    "bad_response",
+    "parse_error",
+    "circuit_open",
+    "stream_interrupted",
+)
+
 
 class LLMError(RuntimeError):
-    """LLM 调用失败（网络/超时/限流/服务端错误）。"""
+    """LLM 调用失败（网络/超时/限流/服务端错误）。
+
+    ``kind`` 是统一错误分类（见 :data:`LLM_ERROR_KINDS`），供调用方决定
+    是否重试、降级或熔断，也是 trace / 指标里唯一使用的标签。
+    """
+
+    def __init__(self, message: str, *, kind: str = "server") -> None:
+        super().__init__(message)
+        self.kind = kind if kind in LLM_ERROR_KINDS else "server"
 
 
 class LLMResponseError(LLMError):
     """LLM 返回内容不可用（空内容、JSON 解析失败）。"""
+
+    def __init__(self, message: str, *, kind: str = "bad_response") -> None:
+        super().__init__(message, kind=kind)
 
 
 class LLMStreamInterrupted(LLMError):
@@ -45,7 +71,7 @@ class LLMStreamInterrupted(LLMError):
     """
 
     def __init__(self, partial: str, message: str) -> None:
-        super().__init__(message)
+        super().__init__(message, kind="stream_interrupted")
         self.partial = partial
 
 
@@ -90,6 +116,9 @@ class LLMClient:
         timeout_s: float = 60.0,
         max_retries: int = 2,
         thinking: str = "",
+        max_concurrency: int = 8,
+        circuit_fail_threshold: int = 5,
+        circuit_cooldown_s: float = 30.0,
     ) -> None:
         if not api_key:
             raise ConfigError(
@@ -102,6 +131,13 @@ class LLMClient:
         self._model = model
         self._base_url = base_url or ""
         self._max_retries = max_retries
+        # 并发上限与熔断状态都是进程内的；客户端按配置键缓存，天然按模型隔离
+        self._semaphore = threading.BoundedSemaphore(max(int(max_concurrency), 1))
+        self._fail_threshold = max(int(circuit_fail_threshold), 1)
+        self._cooldown_s = max(float(circuit_cooldown_s), 1.0)
+        self._consecutive_failures = 0
+        self._open_until = 0.0
+        self._guard = threading.Lock()
         #: 思考模式开关（enabled/disabled/空=不传），按 provider 适配参数形态：
         #: - DeepSeek 官方（api.deepseek.com）：默认 enabled，思考模式下 temperature 无效、
         #:   输出上限 64K、延迟与费用显著上升，参数形态 ``thinking: {type: ...}``；
@@ -112,15 +148,50 @@ class LLMClient:
         self._thinking = thinking.strip().lower()
 
     def _create(self, **kwargs: Any):
-        """统一的请求出口：按"真实 HTTP 请求"计数（重试各算一次）。"""
+        """统一的请求出口：按"真实 HTTP 请求"计数（重试各算一次）。
+
+        异常在这里统一分类成 :class:`LLMError`（``kind`` 见
+        :data:`LLM_ERROR_KINDS`），并更新熔断计数；调用方只按 kind 决策。
+        """
         model = str(kwargs.get("model") or self._model)
         try:
             resp = self._client.chat.completions.create(**kwargs)
-        except Exception:
+        except Exception as exc:  # noqa: BLE001 - 分类后统一抛出
+            kind = _classify_error(exc)
             record_llm_call(model, "error")
-            raise
+            record_llm_failure(model, kind)
+            self._note_failure()
+            raise LLMError(f"LLM 请求失败（{kind}）: {exc}", kind=kind) from exc
         record_llm_call(model, "success")
+        self._note_success()
         return resp
+
+    def _note_failure(self) -> None:
+        with self._guard:
+            self._consecutive_failures += 1
+            if self._consecutive_failures >= self._fail_threshold and self._open_until <= time.monotonic():
+                self._open_until = time.monotonic() + self._cooldown_s
+                logger.warning(
+                    "LLM 熔断打开：连续失败 %d 次，%.0fs 内快速失败 base_url=%s model=%s",
+                    self._consecutive_failures,
+                    self._cooldown_s,
+                    _redact_url(self._base_url),
+                    self._model,
+                )
+
+    def _note_success(self) -> None:
+        with self._guard:
+            self._consecutive_failures = 0
+            self._open_until = 0.0
+
+    def _check_circuit(self) -> None:
+        with self._guard:
+            remaining = self._open_until - time.monotonic()
+        if remaining > 0:
+            record_llm_failure(self._model, "circuit_open")
+            raise LLMError(
+                f"LLM 熔断中，{remaining:.0f}s 后重试（确定性降级）", kind="circuit_open"
+            )
 
     def _thinking_kwargs(self) -> dict[str, Any]:
         if self._thinking not in {"enabled", "disabled"}:
@@ -155,15 +226,21 @@ class LLMClient:
 
         last_exc: Exception | None = None
         for attempt in range(self._max_retries + 1):
+            self._check_circuit()
             started = time.perf_counter()
             try:
-                resp = self._create(**kwargs)
+                with self._semaphore:
+                    resp = self._create(**kwargs)
             except Exception as exc:  # noqa: BLE001 - 统一转成 LLMError 再重试
                 last_exc = exc
                 if attempt < self._max_retries:
                     _backoff_sleep(attempt)
                     continue
-                raise LLMError(f"LLM 调用失败（重试 {self._max_retries} 次后仍失败）: {exc}") from exc
+                kind = getattr(exc, "kind", "") or _classify_error(exc)
+                raise LLMError(
+                    f"LLM 调用失败（重试 {self._max_retries} 次后仍失败，{kind}）: {exc}",
+                    kind=kind,
+                ) from exc
 
             latency_ms = int((time.perf_counter() - started) * 1000)
             content = (resp.choices[0].message.content or "").strip() if resp.choices else ""
@@ -227,25 +304,28 @@ class LLMClient:
 
         last_exc: Exception | None = None
         for attempt in range(self._max_retries + 1):
+            self._check_circuit()
             partial = ""
             try:
                 stream = self._create(**kwargs)
-                for chunk in stream:
-                    usage = _extract_usage(chunk)
-                    if not chunk.choices:
-                        # OpenAI 风格：单独的 usage-only 块（choices 为空）
-                        if usage:
-                            yield StreamChunk(usage=usage)
-                        continue
-                    choice = chunk.choices[0]
-                    text = choice.delta.content or ""
-                    finish = choice.finish_reason
-                    if text:
-                        partial += text
-                    # DeepSeek 风格：usage 挂在最后一个内容块上（choices 非空、finish_reason 非空），
-                    # 所以这里三种信号任一出现都要产出，避免丢掉用量统计
-                    if text or finish or usage:
-                        yield StreamChunk(text=text, finish_reason=finish, usage=usage)
+                # 持有并发许可直到流读完（或生成器被关闭），避免压测打爆上游配额
+                with self._semaphore:
+                    for chunk in stream:
+                        usage = _extract_usage(chunk)
+                        if not chunk.choices:
+                            # OpenAI 风格：单独的 usage-only 块（choices 为空）
+                            if usage:
+                                yield StreamChunk(usage=usage)
+                            continue
+                        choice = chunk.choices[0]
+                        text = choice.delta.content or ""
+                        finish = choice.finish_reason
+                        if text:
+                            partial += text
+                        # DeepSeek 风格：usage 挂在最后一个内容块上（choices 非空、finish_reason 非空），
+                        # 所以这里三种信号任一出现都要产出，避免丢掉用量统计
+                        if text or finish or usage:
+                            yield StreamChunk(text=text, finish_reason=finish, usage=usage)
                 return
             except Exception as exc:  # noqa: BLE001 - 统一转 LLMError 再决定重试
                 last_exc = exc
@@ -257,9 +337,44 @@ class LLMClient:
                 if attempt < self._max_retries:
                     _backoff_sleep(attempt)
                     continue
-                raise LLMError(f"LLM 流式调用失败（重试 {self._max_retries} 次后仍失败）: {exc}") from exc
+                kind = getattr(exc, "kind", "") or _classify_error(exc)
+                raise LLMError(
+                    f"LLM 流式调用失败（重试 {self._max_retries} 次后仍失败，{kind}）: {exc}",
+                    kind=kind,
+                ) from exc
         # 理论不可达
         raise LLMError(f"LLM 流式调用异常退出: {last_exc}")
+
+
+def _classify_error(exc: Exception) -> str:
+    """把 OpenAI SDK / 网络异常收敛成统一错误分类。"""
+    name = type(exc).__name__
+    if "Timeout" in name:
+        return "timeout"
+    if "RateLimit" in name or "429" in str(exc):
+        return "rate_limit"
+    if "Authentication" in name or "PermissionDenied" in name or "401" in str(exc) or "403" in str(exc):
+        return "auth"
+    if "BadRequest" in name or "UnprocessableEntity" in name or "422" in str(exc):
+        return "bad_request"
+    if "Connection" in name or "ConnectError" in name:
+        return "connection"
+    if isinstance(exc, LLMError):
+        return exc.kind
+    return "server"
+
+
+def _redact_url(url: str) -> str:
+    """日志里只保留 host，避免把带 token 的 query string 写进日志。"""
+    if not url:
+        return ""
+    try:
+        from urllib.parse import urlsplit
+
+        parsed = urlsplit(url)
+        return parsed.hostname or "***"
+    except ValueError:
+        return "***"
 
 
 def _extract_usage(chunk) -> dict[str, int]:
@@ -292,9 +407,26 @@ _CLIENT_CACHE_MAX = 4
 
 
 def _get_cached_client(
-    api_key: str, base_url: str, model: str, timeout_s: float, max_retries: int, thinking: str = ""
+    api_key: str,
+    base_url: str,
+    model: str,
+    timeout_s: float,
+    max_retries: int,
+    thinking: str = "",
+    *,
+    max_concurrency: int = 8,
+    circuit_fail_threshold: int = 5,
+    circuit_cooldown_s: float = 30.0,
 ) -> LLMClient:
-    cache_key = (_key_fingerprint(api_key), base_url, model, timeout_s, max_retries, thinking)
+    cache_key = (
+        _key_fingerprint(api_key),
+        base_url,
+        model,
+        timeout_s,
+        max_retries,
+        thinking,
+        max_concurrency,
+    )
     client = _CLIENT_CACHE.get(cache_key)
     if client is None:
         client = LLMClient(
@@ -304,6 +436,9 @@ def _get_cached_client(
             timeout_s=timeout_s,
             max_retries=max_retries,
             thinking=thinking,
+            max_concurrency=max_concurrency,
+            circuit_fail_threshold=circuit_fail_threshold,
+            circuit_cooldown_s=circuit_cooldown_s,
         )
         _CLIENT_CACHE[cache_key] = client
         while len(_CLIENT_CACHE) > _CLIENT_CACHE_MAX:  # 与原 lru_cache(maxsize=4) 行为一致
@@ -312,8 +447,9 @@ def _get_cached_client(
 
 
 def get_llm_client(settings: Settings | None = None) -> LLMClient:
-    """进程级单例。缺 key 抛 :class:`~config.ConfigError`。"""
+    """进程级单例。配置非法或缺少 key 时 fail-closed 抛 ConfigError。"""
     s = settings or get_settings()
+    validate_llm_config(s)
     return _get_cached_client(
         get_llm_api_key(),
         s.llm_base_url,
@@ -321,6 +457,9 @@ def get_llm_client(settings: Settings | None = None) -> LLMClient:
         float(s.llm_timeout_s),
         s.llm_max_retries,
         s.llm_thinking,
+        max_concurrency=getattr(s, "llm_max_concurrency", 8),
+        circuit_fail_threshold=getattr(s, "llm_circuit_fail_threshold", 5),
+        circuit_cooldown_s=float(getattr(s, "llm_circuit_cooldown_s", 30)),
     )
 
 

@@ -68,6 +68,12 @@ class IntentResult:
     need_history: bool = False
     source: str = "rules"  # "llm" | "rules"
     raw: dict | None = None  # LLM 原始 JSON，调试/回归用
+    #: JSON 校验问题：``schema:*``（缺字段/类型错）与 ``business:*``（枚举越界，
+    #: 已回落默认值）。解析失败不进这里——那是 LLMResponseError(parse_error)。
+    validation_errors: list[str] = field(default_factory=list)
+    #: LLM 调用成本（命中缓存/规则兜底时为空）
+    token_usage: dict = field(default_factory=dict)
+    latency_ms: int = 0
 
     def to_dict(self) -> dict:
         return {
@@ -80,6 +86,9 @@ class IntentResult:
             "law_hints": list(self.law_hints),
             "need_history": self.need_history,
             "source": self.source,
+            "validation_errors": list(self.validation_errors),
+            "token_usage": dict(self.token_usage or {}),
+            "latency_ms": int(self.latency_ms or 0),
         }
 
 
