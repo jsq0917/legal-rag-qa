@@ -205,7 +205,13 @@ class TestProjectLayout:
         assert_secrets_not_in_dotenv(BASE_DIR / ".env.example")
 
     def test_data_sources_present(self):
-        raw = list((BASE_DIR / "data" / "raw").glob("*.md"))
-        assert len(raw) == 3
-        assert any("劳动合同法" in p.name for p in raw)
-        assert any("民法典" in p.name for p in raw)
+        raw = {p.name for p in (BASE_DIR / "data" / "raw").glob("*.md")}
+        assert raw == {
+            "中华人民共和国劳动合同法.md",
+            "中华人民共和国劳动法_中华人民共和国人力资源和社会保障部.md",
+            "中华人民共和国民法典.md",
+            "中华人民共和国劳动合同法实施条例.md",
+            "中华人民共和国劳动争议调解仲裁法.md",
+            "工伤保险条例.md",
+            "职工带薪年休假条例.md",
+        }

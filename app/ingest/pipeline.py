@@ -51,11 +51,15 @@ from app.ingest.writer import (
 )
 from config import BASE_DIR, get_settings
 
-#: 三部法律与知识库的默认对应关系（决策点 Q5：两个库）
+#: 默认语料与知识库的对应关系（决策点 Q5：两个库）
 DEFAULT_CORPUS: dict[str, list[str]] = {
     "kb_labor": [
         "中华人民共和国劳动合同法.md",
         "中华人民共和国劳动法_中华人民共和国人力资源和社会保障部.md",
+        "中华人民共和国劳动合同法实施条例.md",
+        "中华人民共和国劳动争议调解仲裁法.md",
+        "工伤保险条例.md",
+        "职工带薪年休假条例.md",
     ],
     "kb_civil": ["中华人民共和国民法典.md"],
 }
