@@ -35,11 +35,23 @@ STRUCTURED_TOPICS = (
     "合同解除",
 )
 
-#: 三部法律名
+#: 语料覆盖的七部法律名（与 Milvus/MySQL 里的 title 前缀一致）
 LAW_LABOR_CONTRACT = "中华人民共和国劳动合同法"
 LAW_LABOR = "中华人民共和国劳动法"
 LAW_CIVIL = "中华人民共和国民法典"
-ALL_LAWS = (LAW_LABOR_CONTRACT, LAW_LABOR, LAW_CIVIL)
+LAW_INJURY = "工伤保险条例"
+LAW_ARBITRATION = "中华人民共和国劳动争议调解仲裁法"
+LAW_CONTRACT_IMPL = "中华人民共和国劳动合同法实施条例"
+LAW_ANNUAL_LEAVE = "职工带薪年休假条例"
+ALL_LAWS = (
+    LAW_LABOR_CONTRACT,
+    LAW_LABOR,
+    LAW_CIVIL,
+    LAW_INJURY,
+    LAW_ARBITRATION,
+    LAW_CONTRACT_IMPL,
+    LAW_ANNUAL_LEAVE,
+)
 
 
 @dataclass(frozen=True)

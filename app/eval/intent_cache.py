@@ -77,18 +77,21 @@ def _install_usage_counter() -> Callable[[], dict[str, int]]:
     return snapshot
 
 
-def fill(batch_size: int) -> None:
-    from app.orchestration.intent import recognize_intent
+def fill(batch_size: int, *, refresh: bool = False, usage_path: Path = USAGE_PATH) -> None:
+    from app.orchestration.intent import get_intent_client, recognize_intent
 
     cases = load_cases()
-    pipeline = _load(PIPELINE_CACHE)
-    hints = _load(HINTS_CACHE)
+    pipeline = {} if refresh else _load(PIPELINE_CACHE)
+    hints = {} if refresh else _load(HINTS_CACHE)
     missing = [c for c in cases if c["id"] not in pipeline]
     if not missing:
-        print("意图缓存已覆盖全部样本，无需补齐")
+        print("意图缓存已覆盖全部样本，无需补齐（--refresh 可整体重算）")
         return
     print(f"待补齐 {len(missing)} 条（已有 {len(pipeline)} 条），每批 {batch_size} 条")
 
+    # 显式注入 client：跳过快速规则前置与 Redis 意图缓存，保证拿到的是
+    # 当前 prompt/词表下的真实 LLM 结果（否则会复用旧提示词产生的缓存）。
+    client = get_intent_client()
     snapshot = _install_usage_counter()
     usage_log: list[dict[str, Any]] = []
     total_prompt = total_completion = 0
@@ -100,7 +103,7 @@ def fill(batch_size: int) -> None:
         before = snapshot()
         batch_failures: list[str] = []
         for case in batch:
-            result = recognize_intent(case["question"])
+            result = recognize_intent(case["question"], client=client)
             fallback = result.source == "rules"
             if fallback:
                 # 规则兜底结果不落缓存：它代表 LLM 失败，落盘会把降级结果
@@ -168,20 +171,26 @@ def fill(batch_size: int) -> None:
         "elapsed_s": round(elapsed, 1),
         "batches": usage_log,
     }
-    _save(USAGE_PATH, summary)
+    _save(usage_path, summary)
     print(
         f"补齐完成：{len(pipeline)} 条，LLM {summary['llm_calls']} 次，"
         f"prompt {total_prompt} / completion {total_completion} tokens，"
         f"约 ¥{summary['cost_cny_estimate']:.4f}（假设价），耗时 {elapsed:.0f}s"
     )
-    print(f"用量明细 → {USAGE_PATH}")
+    print(f"用量明细 → {usage_path}")
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="补齐评估集意图缓存（分批记账）")
     parser.add_argument("--batch-size", type=int, default=20, help="每批条数，默认 20")
+    parser.add_argument(
+        "--refresh", action="store_true", help="忽略已有缓存，整体重算（prompt/词表变更后使用）"
+    )
+    parser.add_argument(
+        "--usage-out", type=Path, default=USAGE_PATH, help="用量明细输出路径"
+    )
     args = parser.parse_args()
-    fill(max(1, args.batch_size))
+    fill(max(1, args.batch_size), refresh=args.refresh, usage_path=args.usage_out)
 
 
 if __name__ == "__main__":
