@@ -17,6 +17,7 @@ from fastapi import Depends, Request
 
 from app.core.errors import RateLimited
 from app.core.logger import get_logger
+from app.core.metrics import record_rate_limited
 from app.core.netutil import client_ip
 from app.core.security import get_current_user
 from app.db.redis_client import get_redis
@@ -87,6 +88,7 @@ def _enforce(client_ip: str, user_id: int | None, settings: Settings | None) -> 
     if count > limit:
         # 本桶剩余秒数作为 retry_after
         retry_after = 60 - (int(time.time()) % 60)
+        record_rate_limited("chat")
         logger.info("限流触发 identity=%s count=%d limit=%d", identity, count, limit)
         raise RateLimited(
             f"请求过于频繁，请 {retry_after} 秒后再试",

@@ -21,10 +21,12 @@ from app.api.chat import router as chat_router
 from app.api.health import router as health_router
 from app.api.intent import router as intent_router
 from app.api.knowledge import router as knowledge_router
+from app.api.metrics import router as metrics_router
 from app.api.retrieval import router as retrieval_router
 from app.api.sessions import router as sessions_router
 from app.core.errors import register_exception_handlers
 from app.core.logger import get_logger, setup_logging, shutdown_logging
+from app.core.metrics import MetricsMiddleware, check_disk_watermark
 from app.core.middleware import RequestIDMiddleware
 from app.db.milvus_client import close_milvus
 from app.db.mysql import dispose_engines
@@ -93,6 +95,7 @@ async def lifespan(app: FastAPI):
         ".".join(map(str, sys.version_info[:3])),
     )
     _startup_checks(settings)
+    check_disk_watermark(settings=settings)
     logger.info(
         "依赖地址 mysql=%s:%s/%s redis=%s:%s/%s milvus=%s:%s/%s",
         settings.mysql_host, settings.mysql_port, settings.mysql_db,
@@ -121,6 +124,7 @@ def create_app() -> FastAPI:
     )
 
     app.add_middleware(RequestIDMiddleware)
+    app.add_middleware(MetricsMiddleware)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origin_list(),
@@ -131,6 +135,7 @@ def create_app() -> FastAPI:
     )
 
     register_exception_handlers(app)
+    app.include_router(metrics_router)
     app.include_router(health_router, prefix="/api")
     app.include_router(knowledge_router)
     app.include_router(retrieval_router)

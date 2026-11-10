@@ -23,6 +23,7 @@ from openai import OpenAI
 from openai.types.chat import ChatCompletionMessageParam
 
 from app.core.logger import get_logger
+from app.core.metrics import record_llm_call
 from config import ConfigError, Settings, get_llm_api_key, get_settings
 
 logger = get_logger("lawanswer.llm")
@@ -110,6 +111,17 @@ class LLMClient:
         #: - 其他 OpenAI 兼容厂商：不传。
         self._thinking = thinking.strip().lower()
 
+    def _create(self, **kwargs: Any):
+        """统一的请求出口：按"真实 HTTP 请求"计数（重试各算一次）。"""
+        model = str(kwargs.get("model") or self._model)
+        try:
+            resp = self._client.chat.completions.create(**kwargs)
+        except Exception:
+            record_llm_call(model, "error")
+            raise
+        record_llm_call(model, "success")
+        return resp
+
     def _thinking_kwargs(self) -> dict[str, Any]:
         if self._thinking not in {"enabled", "disabled"}:
             return {}
@@ -145,7 +157,7 @@ class LLMClient:
         for attempt in range(self._max_retries + 1):
             started = time.perf_counter()
             try:
-                resp = self._client.chat.completions.create(**kwargs)
+                resp = self._create(**kwargs)
             except Exception as exc:  # noqa: BLE001 - 统一转成 LLMError 再重试
                 last_exc = exc
                 if attempt < self._max_retries:
@@ -217,7 +229,7 @@ class LLMClient:
         for attempt in range(self._max_retries + 1):
             partial = ""
             try:
-                stream = self._client.chat.completions.create(**kwargs)
+                stream = self._create(**kwargs)
                 for chunk in stream:
                     usage = _extract_usage(chunk)
                     if not chunk.choices:

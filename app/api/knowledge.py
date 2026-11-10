@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 
 from app.core.errors import ConflictError, NotFoundError, RateLimited, ValidationFailed
 from app.core.logger import get_logger
+from app.core.metrics import record_rate_limited
 from app.core.security import get_current_user
 from app.db.mysql import get_db
 from app.ingest.gate import get_ingest_gate
@@ -160,6 +161,7 @@ async def upload_documents(
                 raise ValidationFailed(str(exc)) from exc
             # 先准入再落盘：队列满时明确 429，而不是收下文件后让后台任务失败
             if not gate.try_admit():
+                record_rate_limited("ingest")
                 raise RateLimited(
                     f"解析队列已满（并发 {gate.max_concurrency} + 排队 {gate.max_queue}），"
                     "请等当前文档解析完成后再试",
@@ -263,6 +265,7 @@ def reingest_document(doc_id: str, background: BackgroundTasks, db: Session = De
     config = dict(raw_config or {})
     gate = get_ingest_gate()
     if not gate.try_admit():
+        record_rate_limited("ingest")
         raise RateLimited(
             f"解析队列已满（并发 {gate.max_concurrency} + 排队 {gate.max_queue}），"
             "请等当前文档解析完成后再试",
