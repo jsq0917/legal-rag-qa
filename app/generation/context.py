@@ -16,6 +16,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Sequence
 
+from app.domain_profiles import profile_name_for_kb
 from app.generation.prompts import ContextSource
 from app.orchestration.qa_cache import QAPair
 from app.security.guardrails import redact_sensitive
@@ -207,15 +208,17 @@ def build_context_sources(
             )
         )
     for h in hits or []:
+        domain = profile_name_for_kb(getattr(h, "kb_id", "") or "")
         out.append(
             ContextSource(
                 law=h.law_name,
                 chapter_path=h.chapter_path,
-                article_no=h.article_no,
+                article_no="" if domain == "generic" else h.article_no,
                 content=(h.parent_content or h.content or "").strip(),
                 score=h.rerank_score if h.rerank_score is not None else h.score,
                 chunk_id=h.chunk_id,
-                kind="law",
+                kind="law" if domain == "legal" else "section",
+                domain=domain,
                 effective_from=getattr(h, "effective_from", ""),
                 effective_to=getattr(h, "effective_to", ""),
                 version=getattr(h, "version", 0),

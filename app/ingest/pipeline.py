@@ -142,8 +142,12 @@ def prepare(
     overlap: int = 50,
     retrieval_mode: str = "hybrid",
     law_name: str | None = None,
+    profile: str = "legal",
 ) -> PreparedIngest:
-    """解析 + 清洗 + 结构化 + 分块（纯函数，不产生副作用）。"""
+    """解析 + 清洗 + 结构化 + 分块（纯函数，不产生副作用）。
+
+    ``profile="generic"`` 时走标题分节，不伪造法条号/施行日期。
+    """
     file_path = Path(path)
     loaded = load_document(file_path)
 
@@ -170,6 +174,7 @@ def prepare(
         kb_id="pending",
         chunk_size=chunk_size,
         overlap=overlap,
+        label_mode="section" if profile == "generic" else "article",
     )
     normalized_body = "\n".join(item.text for item in lines)
     content_sha1 = sha1_text(normalized_body)
@@ -529,11 +534,14 @@ def ingest_file(
     embedder: Embedder | None = None,
     force: bool = False,
 ) -> IngestResult:
+    from app.domain_profiles import profile_name_for_kb
+
     prepared = prepare(
         path,
         chunk_size=chunk_size,
         overlap=overlap,
         retrieval_mode=retrieval_mode,
+        profile=profile_name_for_kb(kb_id),
     )
     return ingest(prepared, kb_id=kb_id, embedder=embedder, force=force)
 

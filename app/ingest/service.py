@@ -158,11 +158,14 @@ def run_ingest_job(
 
     try:
         with gate.worker_slot():
+            from app.domain_profiles import profile_name_for_kb
+
             prepared = prepare(
                 path,
                 chunk_size=chunk_size,
                 overlap=overlap,
                 retrieval_mode=retrieval_mode,
+                profile=profile_name_for_kb(kb_id),
             )
             result = ingest(
                 prepared,

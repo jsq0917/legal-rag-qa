@@ -34,6 +34,7 @@ from app.core.metrics import record_guardrail_hit
 from app.core.sse import sse_frame
 from app.core.trace import Trace
 from app.security.guardrails import redact_sensitive
+from app.domain_profiles import profile_for_kbs
 from app.generation.context import (
     aggregate_sources,
     build_context_sources,
@@ -367,7 +368,17 @@ class AnswerEngine:
                 max_rounds=gen_cfg.history_max_rounds,
                 token_budget=gen_cfg.history_token_budget,
             )
-            messages = build_messages(query, context_block=context_block, history=trimmed_history)
+            # 领域口径：法律库用六段式法条 Prompt；产品库用资料/章节口径
+            profile = profile_for_kbs(
+                effective_kb_ids or [getattr(h, "kb_id", "") for h in hits],
+                settings=s,
+            )
+            messages = build_messages(
+                query,
+                context_block=context_block,
+                history=trimmed_history,
+                system_prompt=profile.system_prompt,
+            )
 
             yield sse_frame("sources", {"sources": result.sources})
             yield sse_frame("stage", {"stage": "generate"})

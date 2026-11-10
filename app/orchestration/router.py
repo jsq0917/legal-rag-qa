@@ -19,6 +19,7 @@ MySQL（不碰 Milvus，省 60–120ms 检索+重排）；未命中 → 结构�
 
 from __future__ import annotations
 
+from app.domain_profiles import GENERIC, profile_name_for_kb
 from app.orchestration.models import (
     LAW_CIVIL,
     LAW_LABOR,
@@ -53,6 +54,7 @@ def route(
     *,
     selected_kb_ids: list[str] | None = None,
     structured_hit: bool = False,
+    settings=None,
 ) -> RouteDecision:
     """按路由矩阵决策。
 
@@ -62,18 +64,30 @@ def route(
         仅当 ``hit_structured=True`` 时有意义
     """
     intent = intent_result.intent
+    selected = list(dict.fromkeys(selected_kb_ids or []))
+    #: 所选库全部显式配置为 generic（产品 FAQ/手册）时，不套法律路由规则
+    generic_only = bool(selected) and all(
+        profile_name_for_kb(kb_id, settings) == GENERIC for kb_id in selected
+    )
 
     # ---- 问候 / 与法律无关：不检索，固定话术 ----
     if intent == "greeting":
         return RouteDecision(route="greeting", kb_ids=[], reason="问候/闲聊：固定引导话术，不调用任何数据源")
     if intent == "other":
+        if generic_only:
+            return RouteDecision(
+                route="pure_vector",
+                kb_ids=selected,
+                use_milvus=True,
+                reason="产品资料库：非法律问题直接向量检索，不套法条路由",
+            )
         return RouteDecision(route="no_data", kb_ids=[], reason="与法律无关：引导话术，不调用任何数据源")
 
     # ---- 解析目标知识库 ----
     if selected_kb_ids:
         kb_ids = list(dict.fromkeys(selected_kb_ids))  # 去重保序
         hinted = kbs_for_laws(intent_result.law_hints)
-        if hinted and not set(kb_ids) & set(hinted):
+        if hinted and not generic_only and not set(kb_ids) & set(hinted):
             return RouteDecision(
                 route="no_data",
                 kb_ids=[],
@@ -86,6 +100,13 @@ def route(
         return RouteDecision(route="no_data", kb_ids=[], reason="无可用知识库")
 
     # ---- 跨法/泛法律：全库向量检索，不走结构化 ----
+    if intent == "general" and generic_only:
+        return RouteDecision(
+            route="pure_vector",
+            kb_ids=kb_ids,
+            use_milvus=True,
+            reason="产品资料库：泛问题直接向量检索",
+        )
     if intent == "general":
         return RouteDecision(
             route="cross_law",

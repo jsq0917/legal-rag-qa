@@ -74,6 +74,7 @@ class ContextSource:
     effective_from: str = ""      # 施行日期 YYYY-MM-DD
     effective_to: str = ""        # 失效日期 YYYY-MM-DD
     version: int = 0              # 文档入库版本
+    domain: str = "legal"         # legal=法条 / generic=产品资料
 
     @property
     def title(self) -> str:
@@ -89,6 +90,9 @@ class ContextSource:
         if self.article_no:
             parts.append(self.article_no)
         title = "·".join(parts)
+        if self.domain == "generic":
+            # 产品资料没有法条/施行日期：只保留《资料标题》·章节
+            return title
         notes: list[str] = []
         if self.effective_from:
             notes.append(f"{self.effective_from} 施行")

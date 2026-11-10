@@ -91,8 +91,14 @@ def split_content(content: str, chunk_size: int, overlap: int) -> list[str]:
     return pack_sentences(split_sentences(content), chunk_size, overlap)
 
 
-def _plain_articles(doc: ParsedDocument, chunk_size: int) -> list[Article]:
-    """非法律文书（PPT/通用文档）没有条号，退化为按段落聚合的伪条文。"""
+def _plain_articles(
+    doc: ParsedDocument, chunk_size: int, *, fake_labels: bool = True
+) -> list[Article]:
+    """非法律文书没有条号：按段落聚合。
+
+    ``fake_labels=True`` 保持历史行为（段N 占位，法律库里的 PPT 等退化文档）；
+    ``fake_labels=False`` 用于产品资料库，不伪造任何条号/段号。
+    """
     paragraphs = [p.strip() for p in doc.text.splitlines() if p.strip()]
     blocks: list[str] = []
     current = ""
@@ -106,7 +112,7 @@ def _plain_articles(doc: ParsedDocument, chunk_size: int) -> list[Article]:
         blocks.append(current)
     return [
         Article(
-            article_no=f"段{i + 1}",
+            article_no=f"段{i + 1}" if fake_labels else "",
             article_num=i + 1,
             chapter_path="",
             content=block,
@@ -117,6 +123,42 @@ def _plain_articles(doc: ParsedDocument, chunk_size: int) -> list[Article]:
     ]
 
 
+def _section_articles(doc: ParsedDocument, chunk_size: int) -> list[Article]:
+    """产品 FAQ/手册：优先按 Markdown 标题分节，章节即来源定位。"""
+    lines = doc.text.splitlines()
+    if not any(re.match(r"^#{1,6}\s+\S", line) for line in lines):
+        return _plain_articles(doc, chunk_size, fake_labels=False)
+
+    sections: list[Article] = []
+    heading = ""
+    buf: list[str] = []
+
+    def flush() -> None:
+        content = "\n".join(buf).strip()
+        if content:
+            sections.append(
+                Article(
+                    article_no="",
+                    article_num=len(sections) + 1,
+                    chapter_path=heading,
+                    content=content,
+                    line_start=0,
+                    line_end=0,
+                )
+            )
+
+    for line in lines:
+        match = re.match(r"^#{1,6}\s+(.+)$", line.strip())
+        if match:
+            flush()
+            heading = match.group(1).strip()
+            buf = []
+        else:
+            buf.append(line)
+    flush()
+    return sections
+
+
 def build_chunks(
     doc: ParsedDocument,
     *,
@@ -125,12 +167,22 @@ def build_chunks(
     chunk_size: int = 300,
     overlap: int = 50,
     include_parent: bool = True,
+    label_mode: str = "article",
 ) -> list[Chunk]:
-    """生成父块 + 子块。子块是检索单元，父块是生成单元。"""
+    """生成父块 + 子块。子块是检索单元，父块是生成单元。
+
+    ``label_mode="section"`` 用于产品 FAQ/手册：按标题分节，不写条号；
+    默认 ``article`` 保持法条父块行为不变。
+    """
     if overlap >= chunk_size:
         raise ValueError(f"overlap({overlap}) 必须小于 chunk_size({chunk_size})")
 
-    articles = doc.articles or _plain_articles(doc, chunk_size)
+    if doc.articles:
+        articles = doc.articles
+    elif label_mode == "section":
+        articles = _section_articles(doc, chunk_size)
+    else:
+        articles = _plain_articles(doc, chunk_size)
     chunks: list[Chunk] = []
     index = 0
     for article in articles:

@@ -357,6 +357,11 @@ class Settings(BaseSettings):
     cache_answer_min_chars: int = Field(default=80, ge=0)
     qa_text_gate_jaccard: float = Field(default=0.65, ge=0.0, le=1.0)
 
+    # ---- 知识库领域配置（LA-N3）----
+    #: kb_id → legal/generic 的 JSON 映射；未命中回落 default_kb_profile
+    kb_profile_map: str = Field(default='{"kb_generic": "generic"}')
+    default_kb_profile: str = Field(default="legal")
+
     # ---- 生成链路（阶段 5）----
     gen_context_max_chars: int = Field(default=6000, ge=500, le=50000)
     gen_history_max_rounds: int = Field(default=5, ge=0, le=20)

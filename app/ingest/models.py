@@ -42,7 +42,8 @@ class Article:
         parts = [law_name] if law_name else []
         if self.chapter_path:
             parts.append(self.chapter_path)
-        parts.append(self.article_no)
+        if self.article_no:
+            parts.append(self.article_no)
         return "·".join(parts)
 
 
