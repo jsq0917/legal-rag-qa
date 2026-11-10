@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: 后端离线测试
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 uv（Python 3.13）
+        uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.13"
+          enable-cache: true
+
+      # 单测约定全离线：不加载 bge-m3/reranker、不调大模型、不连 MySQL/Redis/Milvus。
+      # 因此跳过 torch / transformers / sentence-transformers / FlagEmbedding / peft
+      # 这些只在真实入库/检索时才会加载的重包（合计数 GB），CI 只装测试实际用到的依赖。
+      - name: 安装依赖（跳过模型运行时重包）
+        run: >
+          uv sync --frozen
+          --no-install-package torch
+          --no-install-package transformers
+          --no-install-package sentence-transformers
+          --no-install-package FlagEmbedding
+          --no-install-package peft
+
+      - name: 离线单测
+        run: uv run --no-sync python -m pytest -q
+        env:
+          APP_ENV: test
+
+  frontend:
+    name: 前端类型检查
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: 安装依赖
+        run: npm ci
+
+      - name: 类型检查
+        run: npm run typecheck
