@@ -355,6 +355,37 @@ class Settings(BaseSettings):
         description="生成后校验答案引用的条号是否落在检索来源内，未命中则补注并写入 SSE meta",
     )
 
+    # ---- ingest 并发闸门 ----
+    # 上传接口用 BackgroundTasks 起解析任务，每个任务在 anyio 线程池里跑完整
+    # 解析 + 向量化（单文件数十秒到分钟级）。不设上限时并发上传会把线程池、
+    # 显存与内存一起打满，殃及问答链路。
+    ingest_max_concurrency: int = Field(
+        default=2,
+        ge=1,
+        le=32,
+        description="同时解析/入库的文档数上限（进程内）",
+    )
+    ingest_max_queue: int = Field(
+        default=6,
+        ge=0,
+        le=100,
+        description="排队等待解析的名额；与并发上限一起构成总在途容量，超出即 429",
+    )
+    ingest_slot_timeout_s: int = Field(
+        default=1800,
+        ge=30,
+        le=86400,
+        description="后台任务等待并发名额的最长时间（秒），超时标记 failed",
+    )
+
+    # ---- 指标 / 磁盘水位 ----
+    metrics_disk_warn_ratio: float = Field(
+        default=0.85,
+        ge=0.5,
+        le=0.99,
+        description="数据盘使用率超过该比例时告警（日志 + /metrics 指标）",
+    )
+
     # ---- 追问预测（回答后推荐 3 个可能的下一个问题）----
     suggest_enabled: bool = Field(
         default=True,

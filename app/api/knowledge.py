@@ -14,10 +14,11 @@ from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from app.core.errors import ConflictError, NotFoundError, ValidationFailed
+from app.core.errors import ConflictError, NotFoundError, RateLimited, ValidationFailed
 from app.core.logger import get_logger
 from app.core.security import get_current_user
 from app.db.mysql import get_db
+from app.ingest.gate import get_ingest_gate
 from app.ingest.loaders import detect_file_type
 from app.ingest.pipeline import ingest_file, new_id
 from app.ingest.service import (
@@ -147,38 +148,59 @@ async def upload_documents(
     if retrieval_mode not in {"dense", "hybrid"}:
         raise ValidationFailed("retrieval_mode 只能是 dense 或 hybrid")
 
+    gate = get_ingest_gate()
     accepted: list[dict] = []
-    for upload in files:
-        data = await upload.read()
-        try:
-            validate_upload(upload.filename or "", len(data), chunk_size, overlap)
-        except UploadRejected as exc:
-            raise ValidationFailed(str(exc)) from exc
-        path = save_upload(data, kb_id, upload.filename or "unnamed")
-        doc_id = new_id()
-        create_pending_document(
-            db,
-            doc_id=doc_id,
-            kb_id=kb_id,
-            filename=Path(upload.filename or "unnamed").name,
-            file_type=detect_file_type(path),
-            file_size=len(data),
-            storage_path=_rel(path),
-            chunk_size=chunk_size,
-            overlap=overlap,
-            retrieval_mode=retrieval_mode,
-        )
-        background.add_task(
-            run_ingest_job,
-            path,
-            kb_id=kb_id,
-            doc_id=doc_id,
-            chunk_size=chunk_size,
-            overlap=overlap,
-            retrieval_mode=retrieval_mode,
-        )
-        accepted.append({"doc_id": doc_id, "filename": upload.filename, "status": "pending"})
-    db.commit()
+    admitted = 0
+    try:
+        for upload in files:
+            data = await upload.read()
+            try:
+                validate_upload(upload.filename or "", len(data), chunk_size, overlap)
+            except UploadRejected as exc:
+                raise ValidationFailed(str(exc)) from exc
+            # 先准入再落盘：队列满时明确 429，而不是收下文件后让后台任务失败
+            if not gate.try_admit():
+                raise RateLimited(
+                    f"解析队列已满（并发 {gate.max_concurrency} + 排队 {gate.max_queue}），"
+                    "请等当前文档解析完成后再试",
+                    detail={
+                        "max_concurrency": gate.max_concurrency,
+                        "max_queue": gate.max_queue,
+                        "outstanding": gate.outstanding,
+                    },
+                )
+            admitted += 1
+            path = save_upload(data, kb_id, upload.filename or "unnamed")
+            doc_id = new_id()
+            create_pending_document(
+                db,
+                doc_id=doc_id,
+                kb_id=kb_id,
+                filename=Path(upload.filename or "unnamed").name,
+                file_type=detect_file_type(path),
+                file_size=len(data),
+                storage_path=_rel(path),
+                chunk_size=chunk_size,
+                overlap=overlap,
+                retrieval_mode=retrieval_mode,
+            )
+            background.add_task(
+                run_ingest_job,
+                path,
+                kb_id=kb_id,
+                doc_id=doc_id,
+                chunk_size=chunk_size,
+                overlap=overlap,
+                retrieval_mode=retrieval_mode,
+                admitted=True,
+            )
+            accepted.append({"doc_id": doc_id, "filename": upload.filename, "status": "pending"})
+        db.commit()
+    except Exception:
+        # 接口抛错时 Starlette 不会执行 background 任务，已占的名额必须退回
+        for _ in range(admitted):
+            gate.release()
+        raise
     return {"accepted": accepted, "count": len(accepted)}
 
 
@@ -239,6 +261,17 @@ def reingest_document(doc_id: str, background: BackgroundTasks, db: Session = De
         except json.JSONDecodeError:
             raw_config = {}
     config = dict(raw_config or {})
+    gate = get_ingest_gate()
+    if not gate.try_admit():
+        raise RateLimited(
+            f"解析队列已满（并发 {gate.max_concurrency} + 排队 {gate.max_queue}），"
+            "请等当前文档解析完成后再试",
+            detail={
+                "max_concurrency": gate.max_concurrency,
+                "max_queue": gate.max_queue,
+                "outstanding": gate.outstanding,
+            },
+        )
     background.add_task(
         run_ingest_job,
         path,
@@ -248,6 +281,7 @@ def reingest_document(doc_id: str, background: BackgroundTasks, db: Session = De
         overlap=int(config.get("overlap", 50)),
         retrieval_mode=config.get("retrieval_mode", "hybrid"),
         force=True,
+        admitted=True,
     )
     return {"doc_id": doc_id, "status": "pending"}
 

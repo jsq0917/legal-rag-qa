@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 from app.core.errors import UpstreamError
 from app.core.logger import get_logger
 from app.ingest.embedder import get_embedder
+from app.ingest.gate import IngestBusy, get_ingest_gate
 from app.ingest.loaders import SUPPORTED_EXT, UnsupportedDocumentError
 from app.ingest.pipeline import ingest, new_id, prepare
 from app.ingest.writer import chunk_to_entity, delete_chunk_vector, refresh_kb_counts, update_document_status
@@ -125,21 +126,35 @@ def run_ingest_job(
     overlap: int,
     retrieval_mode: str = "hybrid",
     force: bool = False,
+    admitted: bool = False,
 ) -> dict:
-    """后台任务入口：任何异常都要落库成 failed，日志留痕。"""
+    """后台任务入口：任何异常都要落库成 failed，日志留痕。
+
+    ``admitted=True`` 表示上传接口已经通过 :func:`get_ingest_gate` 占好名额，
+    本函数结束时负责归还；==False 时（CLI/重试等直接调用）先尝试自行准入，
+    队列满则直接标记 failed，不进入解析。
+    """
+    gate = get_ingest_gate()
+    if not admitted and not gate.try_admit():
+        error = "解析队列已满，任务未执行，请稍后重新解析"
+        logger.warning("入库任务被闸门拒绝 doc=%s 在途=%d", doc_id, gate.outstanding)
+        _mark_failed(doc_id, error)
+        return {"doc_id": doc_id, "status": "rejected", "error": error}
+
     try:
-        prepared = prepare(
-            path,
-            chunk_size=chunk_size,
-            overlap=overlap,
-            retrieval_mode=retrieval_mode,
-        )
-        result = ingest(
-            prepared,
-            kb_id=kb_id,
-            doc_id=doc_id,
-            force=force,
-        )
+        with gate.worker_slot():
+            prepared = prepare(
+                path,
+                chunk_size=chunk_size,
+                overlap=overlap,
+                retrieval_mode=retrieval_mode,
+            )
+            result = ingest(
+                prepared,
+                kb_id=kb_id,
+                doc_id=doc_id,
+                force=force,
+            )
         logger.info(
             "入库完成 doc=%s 文件=%s 状态=%s 条=%d 子块=%d 耗时=%dms",
             result.doc_id,
@@ -155,13 +170,24 @@ def run_ingest_job(
             "article_count": result.article_count,
             "child_count": result.child_count,
         }
+    except IngestBusy as exc:
+        logger.warning("入库任务等待名额超时 doc=%s: %s", doc_id, exc)
+        _mark_failed(doc_id, str(exc))
+        return {"doc_id": doc_id, "status": "failed", "error": str(exc)[:300]}
     except Exception as exc:  # noqa: BLE001 - 后台任务必须吞掉异常并落库
         logger.exception("入库失败 文件=%s", Path(path).name)
-        from app.db.mysql import session_scope
-
-        with session_scope() as db:
-            update_document_status(db, doc_id, status="failed", error=str(exc))
+        _mark_failed(doc_id, str(exc))
         return {"doc_id": doc_id, "status": "failed", "error": str(exc)[:300]}
+    finally:
+        gate.release()
+
+
+def _mark_failed(doc_id: str, error: str) -> None:
+    """把文档状态落成 failed（后台任务与闸门拒绝共用）。"""
+    from app.db.mysql import session_scope
+
+    with session_scope() as db:
+        update_document_status(db, doc_id, status="failed", error=error[:300])
 
 
 def update_chunk_content(session: Session, chunk_id: str, content: str) -> dict:
