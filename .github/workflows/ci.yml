@@ -5,6 +5,15 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+    inputs:
+      run_integration:
+        description: "运行 MySQL/Redis 集成层（不加载模型）"
+        type: boolean
+        default: false
+      run_live:
+        description: "运行 LLM 小样本 live 冒烟（消耗 token，需仓库密钥）"
+        type: boolean
+        default: false
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -52,7 +61,21 @@ jobs:
           --no-install-package nvidia-nvshmem-cu13
           --no-install-package nvidia-nvtx
 
-      - name: 离线单测
+      # 安全负向与 SSE 契约是所有发布路径的阻断项：单独成步，失败即中断，
+      # 不依赖"全量单测整体红/绿"才能看出问题。
+      - name: 安全负向与契约回归
+        run: >
+          uv run --no-sync python -m pytest -q
+          tests/test_permission_matrix.py
+          tests/test_answer_cache.py
+          tests/test_sse.py
+          tests/test_injection_defense.py
+          tests/test_version_consistency.py
+          tests/test_multiturn_eval.py
+        env:
+          APP_ENV: test
+
+      - name: 离线单测（全量）
         run: uv run --no-sync python -m pytest -q
         env:
           APP_ENV: test
@@ -80,3 +103,156 @@ jobs:
 
       - name: 类型检查
         run: npm run typecheck
+
+  # 集成层默认不跑；workflow_dispatch 勾选 run_integration 时启动 MySQL/Redis。
+  # 这里只选不依赖模型与 Milvus 的确定性用例，避免 CI 下载 4GB 模型；
+  # 含 Milvus/重解析/上传的全量集成命令见 README「三层测试」。
+  integration:
+    name: 集成测试（MySQL/Redis）
+    if: github.event_name == 'workflow_dispatch' && inputs.run_integration
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.0.43
+        env:
+          MYSQL_ROOT_PASSWORD: root_dev_pwd
+          MYSQL_DATABASE: lawanswer
+          MYSQL_USER: lawanswer
+          MYSQL_PASSWORD: lawanswer_dev_pwd
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h 127.0.0.1 -uroot -proot_dev_pwd"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7.2
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      APP_ENV: test
+      RUN_INTEGRATION: "1"
+      MYSQL_HOST: 127.0.0.1
+      MYSQL_PORT: "3306"
+      REDIS_HOST: 127.0.0.1
+      REDIS_PORT: "6379"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 uv（Python 3.13）
+        uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.13"
+          enable-cache: true
+
+      - name: 安装依赖（跳过模型运行时重包）
+        run: >
+          uv sync --frozen
+          --no-install-package torch
+          --no-install-package triton
+          --no-install-package transformers
+          --no-install-package sentence-transformers
+          --no-install-package FlagEmbedding
+          --no-install-package peft
+          --no-install-package nvidia-cublas
+          --no-install-package nvidia-cuda-cupti
+          --no-install-package nvidia-cuda-nvrtc
+          --no-install-package nvidia-cuda-runtime
+          --no-install-package nvidia-cudnn-cu13
+          --no-install-package nvidia-cufft
+          --no-install-package nvidia-cufile
+          --no-install-package nvidia-curand
+          --no-install-package nvidia-cusolver
+          --no-install-package nvidia-cusparse
+          --no-install-package nvidia-cusparselt-cu13
+          --no-install-package nvidia-nccl-cu13
+          --no-install-package nvidia-nvjitlink
+          --no-install-package nvidia-nvshmem-cu13
+          --no-install-package nvidia-nvtx
+
+      - name: 初始化数据库（幂等）
+        env:
+          MYSQL_USER: root
+          MYSQL_PASSWORD: root_dev_pwd
+        run: uv run --no-sync python -m app.db.init_db
+
+      - name: 集成测试（租户/缓存/会话/SSE）
+        run: >
+          uv run --no-sync python -m pytest -q -m integration
+          tests/test_security_integration.py
+          tests/test_auth_sessions_integration.py
+
+  # live 层默认不跑；workflow_dispatch 勾选 run_live 且仓库配置 LLM_API_KEY 时执行。
+  # 未配置密钥时显式输出 SKIP，不把"没跑"计为通过。
+  live-smoke:
+    name: LLM live 冒烟（小样本）
+    if: github.event_name == 'workflow_dispatch' && inputs.run_live
+    runs-on: ubuntu-latest
+    env:
+      APP_ENV: test
+      LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 uv（Python 3.13）
+        uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.13"
+          enable-cache: true
+
+      - name: 安装依赖（跳过模型运行时重包）
+        run: >
+          uv sync --frozen
+          --no-install-package torch
+          --no-install-package triton
+          --no-install-package transformers
+          --no-install-package sentence-transformers
+          --no-install-package FlagEmbedding
+          --no-install-package peft
+          --no-install-package nvidia-cublas
+          --no-install-package nvidia-cuda-cupti
+          --no-install-package nvidia-cuda-nvrtc
+          --no-install-package nvidia-cuda-runtime
+          --no-install-package nvidia-cudnn-cu13
+          --no-install-package nvidia-cufft
+          --no-install-package nvidia-cufile
+          --no-install-package nvidia-curand
+          --no-install-package nvidia-cusolver
+          --no-install-package nvidia-cusparse
+          --no-install-package nvidia-cusparselt-cu13
+          --no-install-package nvidia-nccl-cu13
+          --no-install-package nvidia-nvjitlink
+          --no-install-package nvidia-nvshmem-cu13
+          --no-install-package nvidia-nvtx
+
+      - name: 检查密钥（无密钥显式 SKIP）
+        id: key
+        shell: bash
+        run: |
+          if [ -z "${LLM_API_KEY}" ]; then
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "SKIP: 未配置 LLM_API_KEY，live 指标不计入通过率。"
+          else
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: 攻击样本 live 冒烟（6 条 dev）
+        if: steps.key.outputs.available == 'true'
+        run: >
+          uv run --no-sync python -m app.eval.injection_eval
+          --mode live --split dev --max-cases 6
+          --out eval/results/injection_live_ci.json
+
+      - name: 上传 live 结果
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: injection-live
+          path: eval/results/injection_live_ci.json
+          if-no-files-found: ignore

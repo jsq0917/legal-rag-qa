@@ -334,17 +334,32 @@ curl -N http://127.0.0.1:8101/api/chat/stream \
 - 启动时执行自检：若 `.env` 中出现密钥赋值行，应用**拒绝启动**（`config.assert_secrets_not_in_dotenv`）。
 - 日志与健康检查只输出"是否已配置"，不输出密钥内容。
 
-## 测试
+## 测试（三层：离线 / 集成 / live）
+
+| 层 | 依赖 | 命令 | 产物 | CI |
+| --- | --- | --- | --- | --- |
+| 离线 | 无（不加载模型、不连 MySQL/Redis/Milvus、不调 LLM） | `uv run python -m pytest tests/ -q` | 终端结果 | 必跑，失败阻断 |
+| 集成 | 真实 MySQL + Redis + Milvus + 本地模型/语料 | `RUN_INTEGRATION=1 uv run python -m pytest tests/ -q -m integration` | 终端结果 | `workflow_dispatch` 勾选 `run_integration`，只跑安全/会话子集 |
+| live | 真实 LLM 密钥 | `uv run python -m app.eval.injection_eval --mode live --max-cases 6` | `eval/results/injection_live_*.json` | `workflow_dispatch` 勾选 `run_live`；无密钥显式 SKIP |
+
+离线层中，安全负向与 SSE 契约单独成步（`test_permission_matrix` /
+`test_answer_cache` / `test_sse` / `test_injection_defense` /
+`test_version_consistency` / `test_multiturn_eval`），任一项失败都会阻断发布。
+
+集成层的确定性最小集（不加载模型）可直接跑：
 
 ```bash
-uv run python -m pytest tests/ -v          # 全离线，不加载模型、不连数据库
+docker compose up -d mysql redis
+RUN_INTEGRATION=1 uv run python -m pytest -q -m integration \
+  tests/test_security_integration.py tests/test_auth_sessions_integration.py
 ```
 
-需要真实依赖的用例标记为 `integration`，默认跳过：
+含 Milvus 检索、上传/重解析与 SSE 的全量集成需要在完整本地环境执行；其中
+上传/生成用例依赖种子语料与登录态，当前环境的已知失败与原因记录在
+[`REPORT.md`](./REPORT.md)，不计入离线通过率。
 
-```bash
-RUN_INTEGRATION=1 uv run python -m pytest tests/ -v -m integration
-```
+live 层只跑少量样本，命令必须显式给 `--max-cases`（上限 20）；结果文件单独
+落盘，不与 fixture/离线指标合并。
 
 ## 评估（阶段 7）
 
