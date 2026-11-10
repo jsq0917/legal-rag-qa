@@ -147,8 +147,10 @@ export const useChatStore = defineStore('chat', () => {
     const d = draft.value
     switch (evt.event) {
       case 'meta':
-        d.meta = evt.data
-        d.stage = 'intent'
+        // 生成结束后还会再发一条带 citation_check 的 meta，这里必须合并而非覆盖；
+        // 也不能把 stage 拉回 intent（那会把已完成的生成进度条打回去）。
+        d.meta = d.meta ? {...d.meta, ...evt.data} : evt.data
+        if (!d.stage) d.stage = 'intent'
         break
       case 'stage':
         d.stage = evt.data.stage

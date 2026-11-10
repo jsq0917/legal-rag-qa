@@ -25,6 +25,8 @@ from pathlib import Path
 from typing import Any
 
 from app.eval.qa_dataset import load_cases
+from app.generation.citations import CITATION_RE as _CITATION_RE
+from app.generation.citations import normalize_law as _norm_law
 
 ROOT = Path(__file__).resolve().parents[2]
 ANSWERS_PATH = ROOT / "eval" / "results" / "qa_answers.jsonl"
@@ -182,22 +184,10 @@ def strip_disclaimer(answer: str) -> str:
     return text
 
 
-#: 答案中的引用（《法名》第X条），条号支持中文数字与阿拉伯数字
-_CITATION_RE = None
-
-
+#: 引用判定与线上 ``meta.citation_check`` 共用同一份正则/归一化
+#: （见 app/generation/citations.py），避免离线评估与在线校验口径漂移。
 def _citation_re():
-    global _CITATION_RE
-    if _CITATION_RE is None:
-        import re
-
-        _CITATION_RE = re.compile(r"《([^《》]{2,30})》(第[一二三四五六七八九十百零\d]+条)")
     return _CITATION_RE
-
-
-def _norm_law(law: str) -> str:
-    """法名归一化：答案里常用简写（"劳动合同法"），来源/期望用全称，比对前拉齐。"""
-    return (law or "").replace("中华人民共和国", "").strip()
 
 
 def citation_report(rows: list[dict[str, Any]]) -> dict[str, Any]:

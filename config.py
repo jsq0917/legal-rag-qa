@@ -174,6 +174,7 @@ class GenerationConfig:
     temperature: float          # 采样温度（会话默认 0.30）
     replay_chunk_chars: int     # 结构化答案回放的分片大小（打字机效果）
     sources_limit: int          # SSE sources / prompt 资料条数上限
+    citation_check: bool        # 生成后校验答案条号是否落在检索来源内
 
 
 # ---------------------------------------------------------------------------
@@ -349,6 +350,10 @@ class Settings(BaseSettings):
     gen_temperature: float = Field(default=0.3, ge=0.0, le=1.0)
     gen_replay_chunk_chars: int = Field(default=30, ge=5, le=500)
     gen_sources_limit: int = Field(default=10, ge=1, le=50)
+    gen_citation_check: bool = Field(
+        default=True,
+        description="生成后校验答案引用的条号是否落在检索来源内，未命中则补注并写入 SSE meta",
+    )
 
     # ---- 追问预测（回答后推荐 3 个可能的下一个问题）----
     suggest_enabled: bool = Field(
@@ -534,6 +539,7 @@ class Settings(BaseSettings):
             temperature=self.gen_temperature,
             replay_chunk_chars=self.gen_replay_chunk_chars,
             sources_limit=self.gen_sources_limit,
+            citation_check=self.gen_citation_check,
         )
 
     # ------------------------------------------------------------------

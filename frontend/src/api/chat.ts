@@ -7,6 +7,17 @@
 import {TOKEN_KEY, ApiError, ApiErrorBody, http} from './http'
 import type {SourceRef} from './sessions'
 
+/** 生成后引用校验结果（后端 meta.citation_check 原样透出） */
+export interface CitationCheck {
+  ok: boolean
+  cited: string[]
+  verified: string[]
+  unverified: string[]
+  sources_uncited: string[]
+  coverage: number | null
+  source_coverage: number | null
+}
+
 export interface ChatMeta {
   message_id: string
   intent: string
@@ -15,6 +26,8 @@ export interface ChatMeta {
   complexity: string
   cached: boolean
   degraded: boolean | string
+  /** 仅在生成完成后的第二条 meta 上出现 */
+  citation_check?: CitationCheck
 }
 
 export interface ChatDone {

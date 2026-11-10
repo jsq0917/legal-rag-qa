@@ -34,6 +34,12 @@ from app.generation.context import (
     build_context_sources,
     qa_conclusion_block,
 )
+from app.generation.citations import (
+    append_citation_note,
+    check_citations,
+    format_citation_note,
+    strip_citation_note,
+)
 from app.generation.history import trim_history
 from app.generation.llm_client import LLMClient, LLMError, LLMStreamInterrupted
 from app.generation.persistence import persist_exchange
@@ -63,6 +69,34 @@ class StreamResult:
     cached: bool = False
     error: str | None = None
     persisted: bool = False
+    #: 生成后引用校验结果（写进 SSE meta.citation_check，见 citations.py）
+    citation_check: dict = field(default_factory=dict)
+
+
+def _meta_frame(
+    message_id: str,
+    *,
+    intent: str,
+    route: str,
+    rewrite_type: str,
+    complexity: str,
+    cached: bool,
+    degraded: bool | str,
+    citation_check: dict | None = None,
+) -> str:
+    """meta 帧统一构造：前端收到 meta 会整体覆盖，字段必须一次给全。"""
+    payload = {
+        "message_id": message_id,
+        "intent": intent,
+        "route": route,
+        "rewrite_type": rewrite_type,
+        "complexity": complexity,
+        "cached": cached,
+        "degraded": degraded,
+    }
+    if citation_check is not None:
+        payload["citation_check"] = citation_check
+    return sse_frame("meta", payload)
 
 
 class AnswerEngine:
@@ -144,17 +178,14 @@ class AnswerEngine:
             )
             route = plan.route.route
 
-            yield sse_frame(
-                "meta",
-                {
-                    "message_id": message_id,
-                    "intent": plan.intent.intent,
-                    "route": route,
-                    "rewrite_type": plan.intent.rewrite_type,
-                    "complexity": plan.intent.complexity,
-                    "cached": False,
-                    "degraded": plan.degraded,
-                },
+            yield _meta_frame(
+                message_id,
+                intent=plan.intent.intent,
+                route=route,
+                rewrite_type=plan.intent.rewrite_type,
+                complexity=plan.intent.complexity,
+                cached=False,
+                degraded=plan.degraded,
             )
 
             # ---- 分支 A：问候 → 固定话术，不调 LLM ----
@@ -183,17 +214,14 @@ class AnswerEngine:
             if degraded:
                 # 第 5 层容错：Milvus 故障 → 追加一条 meta 告知前端降级状态
                 logger.warning("Milvus 检索不可用，按 vector_unavailable 降级回答")
-                yield sse_frame(
-                    "meta",
-                    {
-                        "message_id": message_id,
-                        "intent": plan.intent.intent,
-                        "route": route,
-                        "rewrite_type": plan.intent.rewrite_type,
-                        "complexity": plan.intent.complexity,
-                        "cached": False,
-                        "degraded": "vector_unavailable",
-                    },
+                yield _meta_frame(
+                    message_id,
+                    intent=plan.intent.intent,
+                    route=route,
+                    rewrite_type=plan.intent.rewrite_type,
+                    complexity=plan.intent.complexity,
+                    cached=False,
+                    degraded="vector_unavailable",
                 )
 
             if hits:
@@ -241,6 +269,19 @@ class AnswerEngine:
 
             # ---- 流式生成（第 2/3 层容错）----
             yield from self._generate(messages, result, gen_cfg, started)
+            if result.citation_check:
+                # 生成后才拿得到完整答案，此时再发一条「带全字段」的 meta：
+                # 前端收 meta 会整体覆盖，缺字段会清空 UI 元信息。
+                yield _meta_frame(
+                    message_id,
+                    intent=plan.intent.intent,
+                    route=route,
+                    rewrite_type=plan.intent.rewrite_type,
+                    complexity=plan.intent.complexity,
+                    cached=False,
+                    degraded=degraded or plan.degraded,
+                    citation_check=result.citation_check,
+                )
             yield self._done_frame(result, started)
 
         except LLMStreamInterrupted as exc:
@@ -357,6 +398,15 @@ class AnswerEngine:
             result.content += chunk.text
             yield sse_frame("delta", {"text": chunk.text})
 
+        # ---- 引用在线校验：答案里出现来源外的条号时补一行提示 ----
+        if gen_cfg.citation_check:
+            check = check_citations(result.content, result.sources)
+            result.citation_check = check
+            if check["unverified"]:
+                note = format_citation_note(check["unverified"])
+                result.content += note
+                yield sse_frame("delta", {"text": note})
+
     def _answer_replay(
         self,
         cached: CachedAnswer,
@@ -368,22 +418,29 @@ class AnswerEngine:
         """答案缓存命中：整段回放（保留打字机效果），不调意图/检索/LLM。"""
         result.cached = True
         result.sources = list(cached.sources)
-        yield sse_frame(
-            "meta",
-            {
-                "message_id": message_id,
-                "intent": cached.intent,
-                "route": cached.route,
-                "rewrite_type": cached.rewrite_type,
-                "complexity": cached.complexity,
-                "cached": True,
-                "degraded": False,
-            },
+        # 缓存里存的是「未补注」的原答案（写缓存时剔除），回放时按同一来源
+        # 重新校验，保证实时校验与缓存命中给出一致的标记。
+        answer = strip_citation_note(cached.answer)
+        citation_check: dict | None = None
+        if gen_cfg.citation_check:
+            check = check_citations(answer, result.sources)
+            result.citation_check = check
+            answer = append_citation_note(answer, check)
+            citation_check = check
+        yield _meta_frame(
+            message_id,
+            intent=cached.intent,
+            route=cached.route,
+            rewrite_type=cached.rewrite_type,
+            complexity=cached.complexity,
+            cached=True,
+            degraded=False,
+            citation_check=citation_check,
         )
         if result.sources:
             yield sse_frame("sources", {"sources": result.sources})
         yield sse_frame("stage", {"stage": "generate"})
-        yield from self._replay_fixed(cached.answer, gen_cfg.replay_chunk_chars, result, started)
+        yield from self._replay_fixed(answer, gen_cfg.replay_chunk_chars, result, started)
 
     #: 只有"检索 + 生成"链路才落答案缓存：greeting / no_data 是固定话术，
     #: pure_structured 已由 qa_cache 写 qa:exact，重复写只是浪费内存。
@@ -404,7 +461,7 @@ class AnswerEngine:
         try:
             self.answer_cache.store(
                 query,
-                answer=result.content,
+                answer=strip_citation_note(result.content),
                 sources=result.sources,
                 route=plan.route.route,
                 intent=plan.intent.intent,

@@ -15,6 +15,7 @@ import pytest
 
 from app.core.sse import parse_sse_frames
 from app.generation import stream as stream_mod
+from app.generation.citations import strip_citation_note
 from app.generation.llm_client import LLMError, StreamChunk
 from app.generation.stream import AnswerEngine
 from app.orchestration.answer_cache import (
@@ -228,14 +229,15 @@ class TestEngineIntegration:
 
         first = _run(engine, QUESTION)
         assert get_event(first, "done")["cached"] is False
-        assert all_deltas(first) == LONG_ANSWER
+        # 引用校验可能追加一行提示；缓存断言只看正文
+        assert strip_citation_note(all_deltas(first)) == LONG_ANSWER
         assert len(llm.calls) == 1
         assert len(analyze_calls) == 1
 
         second = _run(engine, QUESTION)
         assert get_event(second, "done")["cached"] is True
         assert get_event(second, "meta")["cached"] is True
-        assert all_deltas(second) == LONG_ANSWER
+        assert strip_citation_note(all_deltas(second)) == LONG_ANSWER
         assert len(llm.calls) == 1, "命中缓存后不得再调 LLM"
         assert len(analyze_calls) == 1, "命中缓存后不得再做意图识别"
 

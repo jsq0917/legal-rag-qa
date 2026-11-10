@@ -15,7 +15,9 @@ import pytest
 from app.core.sse import parse_sse_frames
 from app.generation import stream as stream_mod
 from app.generation.llm_client import LLMError, LLMStreamInterrupted, StreamChunk
-from app.generation.stream import AnswerEngine
+from app.generation.citations import append_citation_note, check_citations
+from app.generation.stream import AnswerEngine, StreamResult
+from app.orchestration.answer_cache import CachedAnswer
 from app.orchestration.models import IntentResult, RouteDecision
 from app.orchestration.qa_cache import QALookupResult, QAPair
 from app.orchestration.service import QueryPlan
@@ -229,6 +231,92 @@ class TestEventOrder:
             "试用期最长多久", "劳动合同法 试用期 六个月",
         }
         assert all(c["kb_ids"] == ["kb_labor"] for c in retrieve.calls)
+
+
+# ---------------------------------------------------------------------------
+# 引用在线校验
+# ---------------------------------------------------------------------------
+class TestCitationCheck:
+    def test_unverified_citation_gets_note_and_meta(self, monkeypatch):
+        """答案引用了来源外条号 → 回答尾部补注 + meta.citation_check 标记。"""
+        plan = make_plan("pure_vector")
+        llm = FakeLLMStream(chunks=[StreamChunk(text="依据《中华人民共和国劳动合同法》第三十九条，用人单位可以解除。")])
+        frames, *_ = run_engine(
+            monkeypatch, plan, llm=llm, retrieve=fake_retrieve_fn([make_hit("c1", 0.5, rerank=1.0)])
+        )
+        meta = [d for n, d in frames if n == "meta"][-1]
+        # 迟到 meta 必须带齐全部字段，否则前端整体覆盖会清空元信息
+        assert set(meta) >= {
+            "message_id", "intent", "route", "rewrite_type", "complexity", "cached", "degraded",
+            "citation_check",
+        }
+        check = meta["citation_check"]
+        assert check["ok"] is False
+        assert check["unverified"] == ["劳动合同法#第三十九条"]
+        assert "引用校验：" in all_deltas(frames)
+        assert all_deltas(frames).endswith("第三十九条")
+
+    def test_verified_citation_no_note(self, monkeypatch):
+        plan = make_plan("pure_vector")
+        llm = FakeLLMStream(chunks=[StreamChunk(text="依据《劳动合同法》第十九条，试用期最长六个月。")])
+        frames, *_ = run_engine(
+            monkeypatch, plan, llm=llm, retrieve=fake_retrieve_fn([make_hit("c1", 0.5, rerank=1.0)])
+        )
+        check = [d for n, d in frames if n == "meta"][-1]["citation_check"]
+        assert check["ok"] is True
+        assert check["verified"] == ["劳动合同法#第十九条"]
+        assert "引用校验：" not in all_deltas(frames)
+
+    def test_cached_replay_revalidates(self):
+        cached = CachedAnswer(
+            question="试用期最长多久",
+            answer="依据《劳动合同法》第三十九条。",
+            sources=[{"law": LAW, "article_no": "第十九条", "kind": "law"}],
+            route="pure_vector",
+            intent="labor_law",
+        )
+        engine = AnswerEngine(llm_client=FakeLLMStream(), retrieve_fn=fake_retrieve_fn([]), persist_fn=fake_persist())
+        frames = parse_sse_frames(
+            "".join(engine._answer_replay(cached, StreamResult(), engine.settings.generation, time.perf_counter(), "m1"))
+        )
+        meta = frames[0][1]
+        assert meta["cached"] is True
+        assert meta["citation_check"]["ok"] is False
+        assert "引用校验：" in all_deltas(frames)
+
+    def test_cached_replay_never_double_notes(self):
+        base = "依据《劳动合同法》第三十九条。"
+        sources = [{"law": LAW, "article_no": "第十九条", "kind": "law"}]
+        annotated = append_citation_note(base, check_citations(base, sources))
+        cached = CachedAnswer(question="q", answer=annotated, sources=sources, route="pure_vector")
+        engine = AnswerEngine(llm_client=FakeLLMStream(), retrieve_fn=fake_retrieve_fn([]), persist_fn=fake_persist())
+        frames = parse_sse_frames(
+            "".join(engine._answer_replay(cached, StreamResult(), engine.settings.generation, time.perf_counter(), "m1"))
+        )
+        assert all_deltas(frames).count("引用校验：") == 1
+
+    def test_cache_stores_answer_without_note(self, monkeypatch):
+        """补注只用于展示：写缓存前剔除，否则回放会固化提示。"""
+        stored = {}
+
+        class FakeCache:
+            def store(self, query, **kwargs):
+                stored.update(kwargs)
+
+            def lookup(self, *a, **kw):
+                return None
+
+        plan = make_plan("pure_vector")
+        monkeypatch.setattr(stream_mod, "analyze_query", lambda *a, **kw: plan)
+        engine = AnswerEngine(
+            llm_client=FakeLLMStream(chunks=[StreamChunk(text="依据《劳动合同法》第三十九条。")]),
+            retrieve_fn=fake_retrieve_fn([make_hit("c1", 0.5, rerank=1.0)]),
+            persist_fn=fake_persist(),
+            answer_cache=FakeCache(),
+        )
+        list(engine.stream(plan.query, session_id="s1"))
+        assert "引用校验：" not in stored["answer"]
+        assert stored["answer"] == "依据《劳动合同法》第三十九条。"
 
 
 # ---------------------------------------------------------------------------
