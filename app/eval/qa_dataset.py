@@ -1,4 +1,4 @@
-"""QA 评估样本的加载与校验（40 条，设计方案 §7.2）。
+"""QA 评估样本的加载与校验（120 条，设计方案 §7.2）。
 
     uv run python -m app.eval.qa_dataset            # 打印统计 + 校验条号是否存在于语料
     uv run python -m app.eval.qa_dataset --preview  # 额外打印每条期望法条的正文前 40 字
@@ -19,7 +19,7 @@ ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_CASES = ROOT / "eval" / "qa_test_cases.jsonl"
 
 #: §7.2 的类型配比
-EXPECTED_MIX = {"single_hop": 15, "multi_hop": 12, "complex": 8, "no_answer": 5}
+EXPECTED_MIX = {"single_hop": 45, "multi_hop": 35, "complex": 25, "no_answer": 15}
 REQUIRED_FIELDS = (
     "id",
     "type",

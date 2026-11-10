@@ -1,7 +1,13 @@
 {
-  "version": 1,
-  "description": "意图识别评估样本（设计方案 §6.1 / §9：5 类 × 4 条 = 20 条）。label 为人工标注的期望意图。",
-  "labels": ["labor_law", "civil_code", "general", "greeting", "other"],
+  "version": 2,
+  "description": "意图识别评估样本（设计方案 §6.1 / §9：5 类 × 8 条 = 40 条）。label 为人工标注的期望意图。",
+  "labels": [
+    "labor_law",
+    "civil_code",
+    "general",
+    "greeting",
+    "other"
+  ],
   "samples": [
     {
       "id": "L01",
@@ -122,6 +128,126 @@
       "query": "你能做什么？",
       "label": "other",
       "note": "能力询问（§6.1 归 other）"
+    },
+    {
+      "id": "L05",
+      "query": "年假没休完，离职时能折算成钱吗？",
+      "label": "labor_law",
+      "note": "年休假 + 离职，检验劳动法领域判断"
+    },
+    {
+      "id": "L06",
+      "query": "工伤十级大概能赔多少钱？",
+      "label": "labor_law",
+      "note": "工伤待遇，含口语「大概」"
+    },
+    {
+      "id": "L07",
+      "query": "劳动仲裁的时效是多久",
+      "label": "labor_law",
+      "note": "无问号、程序性劳动法问题"
+    },
+    {
+      "id": "L08",
+      "query": "劳务派遣工被用工单位退回，派遣公司能直接开除我吗",
+      "label": "labor_law",
+      "note": "派遣 + 解除，多要素无标点"
+    },
+    {
+      "id": "C05",
+      "query": "遗嘱要什么形式才有效？",
+      "label": "civil_code",
+      "note": "继承编"
+    },
+    {
+      "id": "C06",
+      "query": "楼上花盆掉下来砸伤人，该找谁赔？",
+      "label": "civil_code",
+      "note": "侵权责任编（高空抛物）"
+    },
+    {
+      "id": "C07",
+      "query": "宠物狗咬人，主人要承担赔偿责任吗？",
+      "label": "civil_code",
+      "note": "侵权责任编（饲养动物）"
+    },
+    {
+      "id": "C08",
+      "query": "合同解除后定金还能要回来吗",
+      "label": "civil_code",
+      "note": "合同编；无问号"
+    },
+    {
+      "id": "G05",
+      "query": "劳动法和劳动合同法是什么关系？",
+      "label": "general",
+      "note": "两部劳动法律的体系关系"
+    },
+    {
+      "id": "G06",
+      "query": "民法典是什么时候开始施行的？",
+      "label": "general",
+      "note": "法律常识，不指向具体条文"
+    },
+    {
+      "id": "G07",
+      "query": "劳动仲裁和去法院打官司有什么区别？",
+      "label": "general",
+      "note": "程序对比，跨仲裁与诉讼"
+    },
+    {
+      "id": "G08",
+      "query": "工伤认定和劳动能力鉴定是一回事吗？",
+      "label": "general",
+      "note": "两个程序概念的辨析"
+    },
+    {
+      "id": "R05",
+      "query": "晚上好",
+      "label": "greeting",
+      "note": "短问候"
+    },
+    {
+      "id": "R06",
+      "query": "辛苦了，谢谢",
+      "label": "greeting",
+      "note": "致谢型问候"
+    },
+    {
+      "id": "R07",
+      "query": "嗨，在忙吗",
+      "label": "greeting",
+      "note": "中英混排 + 寒暄"
+    },
+    {
+      "id": "R08",
+      "query": "你好，我想咨询一下",
+      "label": "greeting",
+      "note": "问候 + 咨询意图，仍属寒暄开场"
+    },
+    {
+      "id": "O05",
+      "query": "帮我写一封辞职信",
+      "label": "other",
+      "note": "文书代写请求"
+    },
+    {
+      "id": "O06",
+      "query": "推荐几本入门法律书",
+      "label": "other",
+      "note": "推荐类请求"
+    },
+    {
+      "id": "O07",
+      "query": "你会说法语吗？",
+      "label": "other",
+      "note": "能力询问，与法律无关"
+    },
+    {
+      "id": "O08",
+      "query": "今天股市怎么样？",
+      "label": "other",
+      "note": "时事/金融，完全无关"
     }
   ]
 }

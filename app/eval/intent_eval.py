@@ -7,7 +7,7 @@
 - ``eval/results/intent.json``：准确率、macro-F1、逐类 P/R/F1、混淆矩阵、延迟分位、逐条明细；
 - 终端打印可直接抄进验收记录的摘要表。
 
-量化目标（§9）：accuracy ≥ 0.90、macro-F1 ≥ 0.88（5 类 20 条样本）。
+量化目标（§9）：accuracy ≥ 0.90、macro-F1 ≥ 0.88（5 类 40 条样本）。
 """
 
 from __future__ import annotations
