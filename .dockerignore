@@ -1,0 +1,25 @@
+# 构建上下文只保留运行所需的源码与依赖清单
+.git
+.gitignore
+.venv
+__pycache__
+*.py[cod]
+.pytest_cache
+.mypy_cache
+.ruff_cache
+logs
+data
+models
+tests
+docs
+eval_results
+frontend
+scripts/__pycache__
+scripts/start.ps1
+.env
+.env.*
+*.md
+!README.md
+docker-compose.yml
+Dockerfile
+.dockerignore
