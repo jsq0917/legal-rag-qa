@@ -314,7 +314,9 @@ class Settings(BaseSettings):
     retrieval_dense_rescue_score: float = Field(default=0.40, ge=0.0, le=1.0)
     # 法条互引扩展（task 2）：多跳检索沿"依照本法第X条"等显式边补检被引条。
     # 只扩展头部 max_sources 条命中、最多补 max_added 条，已命中条不重复。
-    retrieval_ref_expansion: bool = Field(default=True)
+    # 默认关闭：120 条评估里 P6E（开启）相对 P6R 为 R@5 −0.7pt、MRR −0.3pt，
+    # 净收益为负（见 eval/results/recall_120_p6_lawfix.json），保留实现供消融。
+    retrieval_ref_expansion: bool = Field(default=False)
     retrieval_ref_max_sources: int = Field(default=3, ge=1, le=10)
     retrieval_ref_max_added: int = Field(default=3, ge=1, le=10)
     # 法条时效（task 3）：检索时按 as_of 过滤未生效/已失效条文。
