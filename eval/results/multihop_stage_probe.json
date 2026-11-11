@@ -1,0 +1,2481 @@
+{
+  "meta": {
+    "generated_at": "2026-11-11T12:14:07+0800",
+    "dataset": "eval/qa_test_cases.jsonl (multi_hop)",
+    "intent_source": "eval/results/intent_pipeline.json",
+    "topk": "per complexity",
+    "law_filter": true,
+    "command": "python scripts/multihop_stage_probe.py"
+  },
+  "summary": {
+    "samples": 35,
+    "prod_recall": 0.7261904761904763,
+    "gold_recall": 0.8285714285714286,
+    "reason_counts": {
+      "hit": 52,
+      "fusion_order": 5,
+      "topk_truncate": 10,
+      "out_of_pool": 5,
+      "per_subquery_quota": 1,
+      "law_filter": 1
+    },
+    "by_rewrite": {
+      "direct": {
+        "samples": 22,
+        "prod_recall": 0.7197
+      },
+      "decompose": {
+        "samples": 12,
+        "prod_recall": 0.7986
+      },
+      "hyde": {
+        "samples": 1,
+        "prod_recall": 0.0
+      }
+    },
+    "seconds": 249.5
+  },
+  "rows": [
+    {
+      "id": "q16",
+      "question": "试用期被公司以“不符合录用条件”辞退，有经济补偿吗？",
+      "complexity": "medium",
+      "final_topk": 5,
+      "per_topk": 7,
+      "rewrite_type": "direct",
+      "prod_mode": "dense",
+      "use_multi": false,
+      "intent_subs": [
+        "试用期以不符合录用条件解除劳动合同是否有经济补偿"
+      ],
+      "gold_subs": [
+        "试用期内以不符合录用条件解除是否需要支付经济补偿"
+      ],
+      "expected": [
+        "中华人民共和国劳动合同法#第三十九条",
+        "中华人民共和国劳动合同法#第四十六条"
+      ],
+      "prod_hits": [
+        "中华人民共和国劳动合同法#第八十三条",
+        "中华人民共和国劳动合同法#第七十一条",
+        "中华人民共和国劳动合同法#第三十九条",
+        "中华人民共和国劳动合同法#第八十七条",
+        "中华人民共和国劳动合同法#第四十六条"
+      ],
+      "gold_hits": [
+        "中华人民共和国劳动合同法#第八十三条",
+        "中华人民共和国劳动合同法#第七十一条",
+        "中华人民共和国劳动合同法#第三十九条",
+        "中华人民共和国劳动合同法#第四十六条",
+        "中华人民共和国劳动合同法#第八十七条"
+      ],
+      "prod_recall": 1.0,
+      "gold_recall": 1.0,
+      "items": [
+        {
+          "article": "中华人民共和国劳动合同法#第三十九条",
+          "prod_pos": 3,
+          "voter_ranks": {
+            "anchor": 3
+          },
+          "best_pool_rank": 3,
+          "best_pool_voter": "anchor",
+          "best_passed_rank": 3,
+          "gold_pos": 3,
+          "gold_best_pool_rank": 3,
+          "unfiltered_rank": null,
+          "reason": "hit"
+        },
+        {
+          "article": "中华人民共和国劳动合同法#第四十六条",
+          "prod_pos": 5,
+          "voter_ranks": {
+            "anchor": 5
+          },
+          "best_pool_rank": 5,
+          "best_pool_voter": "anchor",
+          "best_passed_rank": 5,
+          "gold_pos": 4,
+          "gold_best_pool_rank": 3,
+          "unfiltered_rank": null,
+          "reason": "hit"
+        }
+      ]
+    },
+    {
+      "id": "q17",
+      "question": "公司没提前30天通知就把我辞退了，除了经济补偿还有别的钱吗？",
+      "complexity": "medium",
+      "final_topk": 5,
+      "per_topk": 7,
+      "rewrite_type": "decompose",
+      "prod_mode": "multi",
+      "use_multi": true,
+      "intent_subs": [
+        "用人单位未提前三十日书面通知解除劳动合同，是否需额外支付一个月工资（代通知金）",
+        "违法解除劳动合同的赔偿金与经济补偿能否同时主张",
+        "劳动合同法第四十条、第八十七条关于解除劳动合同经济补偿与赔偿金的规定"
+      ],
+      "gold_subs": [
+        "无过失性辞退的代通知金",
+        "经济补偿的计算标准"
+      ],
+      "expected": [
+        "中华人民共和国劳动合同法#第四十条",
+        "中华人民共和国劳动合同法#第四十六条",
+        "中华人民共和国劳动合同法#第四十七条"
+      ],
+      "prod_hits": [
+        "中华人民共和国劳动合同法实施条例#第五条",
+        "中华人民共和国劳动合同法#第四十条",
+        "中华人民共和国劳动合同法实施条例#第二十五条",
+        "中华人民共和国劳动合同法#第八十七条",
+        "中华人民共和国劳动合同法#第七十一条"
+      ],
+      "gold_hits": [
+        "中华人民共和国劳动合同法实施条例#第五条",
+        "中华人民共和国劳动合同法#第四十七条",
+        "中华人民共和国劳动合同法#第七十一条",
+        "中华人民共和国劳动合同法实施条例#第二十七条",
+        "中华人民共和国劳动合同法#第四十条"
+      ],
+      "prod_recall": 0.3333333333333333,
+      "gold_recall": 0.6666666666666666,
+      "items": [
+        {
+          "article": "中华人民共和国劳动合同法#第四十条",
+          "prod_pos": 2,
+          "voter_ranks": {
+            "anchor": 3,
+            "intent1": 1,
+            "intent3": 11
+          },
+          "best_pool_rank": 1,
+          "best_pool_voter": "intent1",
+          "best_passed_rank": 1,
+          "gold_pos": 5,
+          "gold_best_pool_rank": 3,
+          "unfiltered_rank": null,
+          "reason": "hit"
+        },
+        {
+          "article": "中华人民共和国劳动合同法#第四十六条",
+          "prod_pos": null,
+          "voter_ranks": {
+            "anchor": 12,
+            "intent1": 24,
+            "intent2": 3,
+            "intent3": 5
+          },
+          "best_pool_rank": 3,
+          "best_pool_voter": "intent2",
+          "best_passed_rank": 3,
+          "gold_pos": null,
+          "gold_best_pool_rank": 8,
+          "unfiltered_rank": null,
+          "reason": "fusion_order"
+        },
+        {
+          "article": "中华人民共和国劳动合同法#第四十七条",
+          "prod_pos": null,
+          "voter_ranks": {
+            "anchor": 10,
+            "intent1": 9,
+            "intent2": 9,
+            "intent3": 4
+          },
+          "best_pool_rank": 4,
+          "best_pool_voter": "intent3",
+          "best_passed_rank": 4,
+          "gold_pos": 2,
+          "gold_best_pool_rank": 1,
+          "unfiltered_rank": null,
+          "reason": "fusion_order"
+        }
+      ]
+    },
+    {
+      "id": "q18",
+      "question": "被违法辞退的赔偿金怎么算？和 N、2N 是什么关系？",
+      "complexity": "medium",
+      "final_topk": 5,
+      "per_topk": 7,
+      "rewrite_type": "decompose",
+      "prod_mode": "multi",
+      "use_multi": true,
+      "intent_subs": [
+        "违法解除劳动合同赔偿金的计算标准（经济补偿标准的二倍）",
+        "经济补偿N的计算方式：工作年限与月工资口径",
+        "赔偿金2N与经济补偿N的关系及能否同时主张"
+      ],
+      "gold_subs": [
+        "违法解除赔偿金的倍数",
+        "经济补偿基数的计算口径"
+      ],
+      "expected": [
+        "中华人民共和国劳动合同法#第八十七条",
+        "中华人民共和国劳动合同法#第四十七条"
+      ],
+      "prod_hits": [
+        "中华人民共和国劳动合同法实施条例#第二十五条",
+        "中华人民共和国劳动合同法#第八十七条",
+        "中华人民共和国劳动合同法#第四十七条",
+        "中华人民共和国劳动合同法实施条例#第十条",
+        "中华人民共和国劳动合同法#第八十三条"
+      ],
+      "gold_hits": [
+        "中华人民共和国劳动合同法实施条例#第二十五条",
+        "中华人民共和国劳动合同法#第八十七条",
+        "中华人民共和国劳动合同法实施条例#第二十七条",
+        "中华人民共和国劳动合同法实施条例#第三十四条",
+        "中华人民共和国劳动合同法#第四十七条"
+      ],
+      "prod_recall": 1.0,
+      "gold_recall": 1.0,
+      "items": [
+        {
+          "article": "中华人民共和国劳动合同法#第八十七条",
+          "prod_pos": 2,
+          "voter_ranks": {
+            "anchor": 2,
+            "intent1": 1,
+            "intent2": 19,
+            "intent3": 1
+          },
+          "best_pool_rank": 1,
+          "best_pool_voter": "intent1",
+          "best_passed_rank": 1,
+          "gold_pos": 2,
+          "gold_best_pool_rank": 1,
+          "unfiltered_rank": null,
+          "reason": "hit"
+        },
+        {
+          "article": "中华人民共和国劳动合同法#第四十七条",
+          "prod_pos": 3,
+          "voter_ranks": {
+            "anchor": 7,
+            "intent1": 3,
+            "intent2": 1,
+            "intent3": 13
+          },
+          "best_pool_rank": 1,
+          "best_pool_voter": "intent2",
+          "best_passed_rank": 1,
+          "gold_pos": 5,
+          "gold_best_pool_rank": 2,
+          "unfiltered_rank": null,
+          "reason": "hit"
+        }
+      ]
+    },
+    {
+      "id": "q19",
+      "question": "签了竞业限制，离职后公司不给补偿金，我还受约束吗？",
+      "complexity": "medium",
+      "final_topk": 5,
+      "per_topk": 7,
+      "rewrite_type": "direct",
+      "prod_mode": "dense",
+      "use_multi": false,
+      "intent_subs": [
+        "竞业限制条款 用人单位未支付经济补偿 劳动者是否仍需履行竞业限制义务"
+      ],
+      "gold_subs": [
+        "竞业限制的经济补偿义务",
+        "竞业限制的期限与范围"
+      ],
+      "expected": [
+        "中华人民共和国劳动合同法#第二十三条",
+        "中华人民共和国劳动合同法#第二十四条"
+      ],
+      "prod_hits": [
+        "中华人民共和国劳动合同法#第二十三条",
+        "中华人民共和国劳动合同法#第九十条",
+        "中华人民共和国劳动合同法#第二十四条",
+        "中华人民共和国劳动合同法#第八十七条",
+        "中华人民共和国劳动合同法#第八十五条"
+      ],
+      "gold_hits": [
+        "中华人民共和国劳动合同法#第二十三条",
+        "中华人民共和国劳动合同法#第二十四条",
+        "中华人民共和国劳动合同法#第九十条",
+        "中华人民共和国劳动合同法#第八十七条",
+        "中华人民共和国劳动合同法#第七十一条"
+      ],
+      "prod_recall": 1.0,
+      "gold_recall": 1.0,
+      "items": [
+        {
+          "article": "中华人民共和国劳动合同法#第二十三条",
+          "prod_pos": 1,
+          "voter_ranks": {
+            "anchor": 1
+          },
+          "best_pool_rank": 1,
+          "best_pool_voter": "anchor",
+          "best_passed_rank": 1,
+          "gold_pos": 1,
+          "gold_best_pool_rank": 1,
+          "unfiltered_rank": null,
+          "reason": "hit"
+        },
+        {
+          "article": "中华人民共和国劳动合同法#第二十四条",
+          "prod_pos": 3,
+          "voter_ranks": {
+            "anchor": 3
+          },
+          "best_pool_rank": 3,
+          "best_pool_voter": "anchor",
+          "best_passed_rank": 3,
+          "gold_pos": 2,
+          "gold_best_pool_rank": 1,
+          "unfiltered_rank": null,
+          "reason": "hit"
+        }
+      ]
+    },
+    {
+      "id": "q20",
+      "question": "公司拖欠工资，我能不能直接走人还要补偿？",
+      "complexity": "medium",
+      "final_topk": 5,
+      "per_topk": 7,
+      "rewrite_type": "hyde",
+      "prod_mode": "hybrid",
+      "use_multi": false,
+      "intent_subs": [
+        "用人单位未及时足额支付劳动报酬，劳动者可以解除劳动合同并要求经济补偿吗"
+      ],
+      "gold_subs": [
+        "被迫解除的法定情形",
+        "被迫解除能否主张经济补偿"
+      ],
+      "expected": [
+        "中华人民共和国劳动合同法#第三十八条",
+        "中华人民共和国劳动合同法#第四十六条"
+      ],
+      "prod_hits": [
+        "中华人民共和国劳动争议调解仲裁法#第十六条",
+        "中华人民共和国劳动合同法#第三十条",
+        "中华人民共和国劳动法#第五十条",
+        "中华人民共和国劳动争议调解仲裁法#第九条",
+        "中华人民共和国劳动法#第九十一条"
+      ],
+      "gold_hits": [
+        "中华人民共和国劳动争议调解仲裁法#第十六条",
+        "中华人民共和国劳动合同法实施条例#第十八条",
+        "中华人民共和国劳动合同法#第七十一条",
+        "中华人民共和国劳动合同法#第三十条",
+        "中华人民共和国民法典#第五百六十三条"
+      ],
+      "prod_recall": 0.0,
+      "gold_recall": 0.0,
+      "items": [
+        {
+          "article": "中华人民共和国劳动合同法#第三十八条",
+          "prod_pos": null,
+          "voter_ranks": {
+            "anchor": 13
+          },
+          "best_pool_rank": 13,
+          "best_pool_voter": "anchor",
+          "best_passed_rank": null,
+          "gold_pos": null,
+          "gold_best_pool_rank": 1,
+          "unfiltered_rank": null,
+          "reason": "topk_truncate"
+        },
+        {
+          "article": "中华人民共和国劳动合同法#第四十六条",
+          "prod_pos": null,
+          "voter_ranks": {
+            "anchor": 11
+          },
+          "best_pool_rank": 11,
+          "best_pool_voter": "anchor",
+          "best_passed_rank": null,
+          "gold_pos": null,
+          "gold_best_pool_rank": 3,
+          "unfiltered_rank": null,
+          "reason": "topk_truncate"
+        }
+      ]
+    },
+    {
+      "id": "q21",
+      "question": "怀孕期间被公司辞退，我能主张什么？",
+      "complexity": "medium",
+      "final_topk": 5,
+      "per_topk": 7,
+      "rewrite_type": "direct",
+      "prod_mode": "hybrid",
+      "use_multi": false,
+      "intent_subs": [
+        "怀孕期间被公司辞退，女职工可以主张哪些权利和赔偿"
+      ],
+      "gold_subs": [
+        "三期女职工的解除保护",
+        "违法解除的赔偿标准"
+      ],
+      "expected": [
+        "中华人民共和国劳动合同法#第四十二条",
+        "中华人民共和国劳动合同法#第八十七条",
+        "中华人民共和国劳动法#第二十九条"
+      ],
+      "prod_hits": [
+        "中华人民共和国劳动合同法#第七十七条",
+        "中华人民共和国劳动法#第六十一条",
+        "中华人民共和国劳动法#第二十九条",
+        "中华人民共和国劳动争议调解仲裁法#第六条",
+        "中华人民共和国劳动法#第六十二条"
+      ],
+      "gold_hits": [
+        "中华人民共和国劳动合同法#第七十七条",
+        "中华人民共和国劳动法#第六十条",
+        "中华人民共和国劳动合同法#第八十七条",
+        "中华人民共和国劳动法#第六十一条",
+        "中华人民共和国劳动合同法#第八十三条"
+      ],
+      "prod_recall": 0.3333333333333333,
+      "gold_recall": 0.3333333333333333,
+      "items": [
+        {
+          "article": "中华人民共和国劳动合同法#第四十二条",
+          "prod_pos": null,
+          "voter_ranks": {
+            "anchor": 5
+          },
+          "best_pool_rank": 5,
+          "best_pool_voter": "anchor",
+          "best_passed_rank": 5,
+          "gold_pos": null,
+          "gold_best_pool_rank": 5,
+          "unfiltered_rank": null,
+          "reason": "topk_truncate"
+        },
+        {
+          "article": "中华人民共和国劳动合同法#第八十七条",
+          "prod_pos": null,
+          "voter_ranks": {},
+          "best_pool_rank": null,
+          "best_pool_voter": "",
+          "best_passed_rank": null,
+          "gold_pos": 3,
+          "gold_best_pool_rank": 1,
+          "unfiltered_rank": null,
+          "reason": "out_of_pool"
+        },
+        {
+          "article": "中华人民共和国劳动法#第二十九条",
+          "prod_pos": 3,
+          "voter_ranks": {
+            "anchor": 3
+          },
+          "best_pool_rank": 3,
+          "best_pool_voter": "anchor",
+          "best_passed_rank": 3,
+          "gold_pos": null,
+          "gold_best_pool_rank": 3,
+          "unfiltered_rank": null,
+          "reason": "hit"
+        }
+      ]
+    },
+    {
+      "id": "q22",
+      "question": "劳动合同到期公司不续签，要给我经济补偿吗？",
+      "complexity": "simple",
+      "final_topk": 3,
+      "per_topk": 4,
+      "rewrite_type": "direct",
+      "prod_mode": "dense",
+      "use_multi": false,
+      "intent_subs": [
+        "劳动合同到期公司不续签是否需要支付经济补偿"
+      ],
+      "gold_subs": [
+        "合同期满终止的情形",
+        "期满终止的经济补偿"
+      ],
+      "expected": [
+        "中华人民共和国劳动合同法#第四十四条",
+        "中华人民共和国劳动合同法#第四十六条"
+      ],
+      "prod_hits": [
+        "中华人民共和国劳动合同法#第四十六条",
+        "中华人民共和国劳动合同法#第九十七条",
+        "中华人民共和国劳动合同法#第七十一条"
+      ],
+      "gold_hits": [
+        "中华人民共和国劳动合同法#第四十六条",
+        "中华人民共和国劳动合同法#第四十五条",
+        "中华人民共和国劳动合同法#第四十七条"
+      ],
+      "prod_recall": 0.5,
+      "gold_recall": 0.5,
+      "items": [
+        {
+          "article": "中华人民共和国劳动合同法#第四十四条",
+          "prod_pos": null,
+          "voter_ranks": {},
+          "best_pool_rank": null,
+          "best_pool_voter": "",
+          "best_passed_rank": null,
+          "gold_pos": null,
+          "gold_best_pool_rank": 2,
+          "unfiltered_rank": null,
+          "reason": "out_of_pool"
+        },
+        {
+          "article": "中华人民共和国劳动合同法#第四十六条",
+          "prod_pos": 1,
+          "voter_ranks": {
+            "anchor": 1
+          },
+          "best_pool_rank": 1,
+          "best_pool_voter": "anchor",
+          "best_passed_rank": 1,
+          "gold_pos": 1,
+          "gold_best_pool_rank": 1,
+          "unfiltered_rank": null,
+          "reason": "hit"
+        }
+      ]
+    },
+    {
+      "id": "q23",
+      "question": "劳务派遣员工被用工单位退回，派遣公司能直接解除合同吗？",
+      "complexity": "medium",
+      "final_topk": 5,
+      "per_topk": 7,
+      "rewrite_type": "direct",
+      "prod_mode": "hybrid",
+      "use_multi": false,
+      "intent_subs": [
+        "劳务派遣员工被用工单位退回后，派遣单位能否直接解除劳动合同"
+      ],
+      "gold_subs": [
+        "派遣单位的用人单位义务",
+        "退回与解除的法定条件"
+      ],
+      "expected": [
+        "中华人民共和国劳动合同法#第五十八条",
+        "中华人民共和国劳动合同法#第六十五条"
+      ],
+      "prod_hits": [
+        "中华人民共和国劳动合同法#第六十五条",
+        "中华人民共和国劳动合同法实施条例#第三十二条",
+        "中华人民共和国劳动合同法实施条例#第三十一条",
+        "中华人民共和国劳动合同法#第三十七条",
+        "中华人民共和国劳动合同法#第三十八条"
+      ],
+      "gold_hits": [
+        "中华人民共和国劳动合同法#第六十五条",
+        "中华人民共和国劳动合同法#第六十二条",
+        "中华人民共和国劳动合同法实施条例#第三十二条",
+        "中华人民共和国劳动合同法#第五十八条",
+        "中华人民共和国劳动合同法实施条例#第十八条"
+      ],
+      "prod_recall": 0.5,
+      "gold_recall": 1.0,
+      "items": [
+        {
+          "article": "中华人民共和国劳动合同法#第五十八条",
+          "prod_pos": null,
+          "voter_ranks": {
+            "anchor": 12
+          },
+          "best_pool_rank": 12,
+          "best_pool_voter": "anchor",
+          "best_passed_rank": null,
+          "gold_pos": 4,
+          "gold_best_pool_rank": 2,
+          "unfiltered_rank": null,
+          "reason": "topk_truncate"
+        },
+        {
+          "article": "中华人民共和国劳动合同法#第六十五条",
+          "prod_pos": 1,
+          "voter_ranks": {
+            "anchor": 1
+          },
+          "best_pool_rank": 1,
+          "best_pool_voter": "anchor",
+          "best_passed_rank": 1,
+          "gold_pos": 1,
+          "gold_best_pool_rank": 1,
+          "unfiltered_rank": null,
+          "reason": "hit"
+        }
+      ]
+    },
+    {
+      "id": "q24",
+      "question": "公司搞 996 还不给加班费，我能解除合同要补偿吗？",
+      "complexity": "medium",
+      "final_topk": 5,
+      "per_topk": 7,
+      "rewrite_type": "decompose",
+      "prod_mode": "multi",
+      "use_multi": true,
+      "intent_subs": [
+        "用人单位安排996超时加班且不支付加班费，劳动者能否据此解除劳动合同",
+        "用人单位未及时足额支付加班费，劳动者解除劳动合同能否主张经济补偿金"
+      ],
+      "gold_subs": [
+        "996 工时是否违法",
+        "拒绝加班与被迫解除的经济补偿"
+      ],
+      "expected": [
+        "中华人民共和国劳动法#第四十一条",
+        "中华人民共和国劳动合同法#第三十一条",
+        "中华人民共和国劳动合同法#第三十八条",
+        "中华人民共和国劳动合同法#第四十六条"
+      ],
+      "prod_hits": [
+        "中华人民共和国劳动合同法#第八十五条",
+        "中华人民共和国劳动法#第二十八条",
+        "中华人民共和国劳动合同法#第三十一条",
+        "中华人民共和国劳动合同法#第三十六条",
+        "中华人民共和国劳动合同法#第三十条"
+      ],
+      "gold_hits": [
+        "中华人民共和国劳动合同法#第八十五条",
+        "中华人民共和国劳动法#第九十条",
+        "中华人民共和国劳动法#第二十八条",
+        "中华人民共和国劳动法#第四十三条",
+        "中华人民共和国劳动合同法实施条例#第五条"
+      ],
+      "prod_recall": 0.25,
+      "gold_recall": 0.0,
+      "items": [
+        {
+          "article": "中华人民共和国劳动法#第四十一条",
+          "prod_pos": null,
+          "voter_ranks": {},
+          "best_pool_rank": null,
+          "best_pool_voter": "",
+          "best_passed_rank": null,
+          "gold_pos": null,
+          "gold_best_pool_rank": 8,
+          "unfiltered_rank": null,
+          "reason": "out_of_pool"
+        },
+        {
+          "article": "中华人民共和国劳动合同法#第三十一条",
+          "prod_pos": 3,
+          "voter_ranks": {
+            "anchor": 3,
+            "intent1": 2,
+            "intent2": 12
+          },
+          "best_pool_rank": 2,
+          "best_pool_voter": "intent1",
+          "best_passed_rank": 2,
+          "gold_pos": null,
+          "gold_best_pool_rank": 3,
+          "unfiltered_rank": null,
+          "reason": "hit"
+        },
+        {
+          "article": "中华人民共和国劳动合同法#第三十八条",
+          "prod_pos": null,
+          "voter_ranks": {
+            "anchor": 11,
+            "intent1": 5,
+            "intent2": 8
+          },
+          "best_pool_rank": 5,
+          "best_pool_voter": "intent1",
+          "best_passed_rank": 5,
+          "gold_pos": null,
+          "gold_best_pool_rank": 11,
+          "unfiltered_rank": null,
+          "reason": "fusion_order"
+        },
+        {
+          "article": "中华人民共和国劳动合同法#第四十六条",
+          "prod_pos": null,
+          "voter_ranks": {
+            "anchor": 8,
+            "intent1": 24,
+            "intent2": 7
+          },
+          "best_pool_rank": 7,
+          "best_pool_voter": "intent2",
+          "best_passed_rank": 7,
+          "gold_pos": null,
+          "gold_best_pool_rank": 6,
+          "unfiltered_rank": null,
+          "reason": "fusion_order"
+        }
+      ]
+    },
+    {
+      "id": "q25",
+      "question": "口头说好试用期三个月但合同没写，还作数吗？",
+      "complexity": "simple",
+      "final_topk": 3,
+      "per_topk": 4,
+      "rewrite_type": "direct",
+      "prod_mode": "dense",
+      "use_multi": false,
+      "intent_subs": [
+        "劳动合同未约定试用期，口头约定试用期三个月是否有效"
+      ],
+      "gold_subs": [
+        "书面劳动合同的订立义务",
+        "试用期的约定形式"
+      ],
+      "expected": [
+        "中华人民共和国劳动合同法#第十条",
+        "中华人民共和国劳动合同法#第十九条"
+      ],
+      "prod_hits": [
+        "中华人民共和国劳动合同法#第十九条",
+        "中华人民共和国劳动合同法#第十四条",
+        "中华人民共和国劳动合同法#第十条"
+      ],
+      "gold_hits": [
+        "中华人民共和国民法典#第六百三十八条",
+        "中华人民共和国劳动合同法#第十条",
+        "中华人民共和国劳动合同法#第十九条"
+      ],
+      "prod_recall": 1.0,
+      "gold_recall": 1.0,
+      "items": [
+        {
+          "article": "中华人民共和国劳动合同法#第十条",
+          "prod_pos": 3,
+          "voter_ranks": {
+            "anchor": 3
+          },
+          "best_pool_rank": 3,
+          "best_pool_voter": "anchor",
+          "best_passed_rank": 3,
+          "gold_pos": 2,
+          "gold_best_pool_rank": 1,
+          "unfiltered_rank": null,
+          "reason": "hit"
+        },
+        {
+          "article": "中华人民共和国劳动合同法#第十九条",
+          "prod_pos": 1,
+          "voter_ranks": {
+            "anchor": 1
+          },
+          "best_pool_rank": 1,
+          "best_pool_voter": "anchor",
+          "best_passed_rank": 1,
+          "gold_pos": 3,
+          "gold_best_pool_rank": 1,
+          "unfiltered_rank": null,
+          "reason": "hit"
+        }
+      ]
+    },
+    {
+      "id": "q26",
+      "question": "房东不退押金还换了门锁，我能主张什么？",
+      "complexity": "medium",
+      "final_topk": 5,
+      "per_topk": 7,
+      "rewrite_type": "direct",
+      "prod_mode": "hybrid",
+      "use_multi": false,
+      "intent_subs": [
+        "租赁合同到期后房东不退押金并更换门锁，承租人可主张哪些权利"
+      ],
+      "gold_subs": [
+        "出租人的适租义务",
+        "违约责任的承担方式"
+      ],
+      "expected": [
+        "中华人民共和国民法典#第七百零八条",
+        "中华人民共和国民法典#第五百七十七条"
+      ],
+      "prod_hits": [
+        "中华人民共和国民法典#第七百四十八条",
+        "中华人民共和国民法典#第七百二十八条",
+        "中华人民共和国民法典#第七百二十三条",
+        "中华人民共和国民法典#第七百四十一条",
+        "中华人民共和国民法典#第七百五十六条"
+      ],
+      "gold_hits": [
+        "中华人民共和国民法典#第七百四十八条",
+        "中华人民共和国民法典#第七百一十二条",
+        "中华人民共和国民法典#第一百七十九条",
+        "中华人民共和国民法典#第七百二十八条",
+        "中华人民共和国民法典#第五百七十七条"
+      ],
+      "prod_recall": 0.0,
+      "gold_recall": 0.5,
+      "items": [
+        {
+          "article": "中华人民共和国民法典#第七百零八条",
+          "prod_pos": null,
+          "voter_ranks": {},
+          "best_pool_rank": null,
+          "best_pool_voter": "",
+          "best_passed_rank": null,
+          "gold_pos": null,
+          "gold_best_pool_rank": 3,
+          "unfiltered_rank": null,
+          "reason": "out_of_pool"
+        },
+        {
+          "article": "中华人民共和国民法典#第五百七十七条",
+          "prod_pos": null,
+          "voter_ranks": {},
+          "best_pool_rank": null,
+          "best_pool_voter": "",
+          "best_passed_rank": null,
+          "gold_pos": 5,
+          "gold_best_pool_rank": 2,
+          "unfiltered_rank": null,
+          "reason": "out_of_pool"
+        }
+      ]
+    },
+    {
+      "id": "q27",
+      "question": "婚前一方买的房，婚后一起还贷，离婚时怎么分？",
+      "complexity": "medium",
+      "final_topk": 5,
+      "per_topk": 7,
+      "rewrite_type": "direct",
+      "prod_mode": "dense",
+      "use_multi": false,
+      "intent_subs": [
+        "婚前一方购买、婚后共同还贷的房产，离婚时如何分割及补偿"
+      ],
+      "gold_subs": [
+        "婚前财产的范围",
+        "离婚时共同财产的分割原则"
+      ],
+      "expected": [
+        "中华人民共和国民法典#第一千零六十三条",
+        "中华人民共和国民法典#第一千零八十七条"
+      ],
+      "prod_hits": [
+        "中华人民共和国民法典#第一千零九十二条",
+        "中华人民共和国民法典#第一千零八十七条",
+        "中华人民共和国民法典#第三百零四条",
+        "中华人民共和国民法典#第一千零八十八条",
+        "中华人民共和国民法典#第五百一十七条"
+      ],
+      "gold_hits": [
+        "中华人民共和国民法典#第一千零九十二条",
+        "中华人民共和国民法典#第一千零六十三条",
+        "中华人民共和国民法典#第一千零八十七条",
+        "中华人民共和国民法典#第一千零六十五条",
+        "中华人民共和国民法典#第三百零四条"
+      ],
+      "prod_recall": 0.5,
+      "gold_recall": 1.0,
+      "items": [
+        {
+          "article": "中华人民共和国民法典#第一千零六十三条",
+          "prod_pos": null,
+          "voter_ranks": {
+            "anchor": 12
+          },
+          "best_pool_rank": 12,
+          "best_pool_voter": "anchor",
+          "best_passed_rank": null,
+          "gold_pos": 2,
+          "gold_best_pool_rank": 1,
+          "unfiltered_rank": null,
+          "reason": "topk_truncate"
+        },
+        {
+          "article": "中华人民共和国民法典#第一千零八十七条",
+          "prod_pos": 2,
+          "voter_ranks": {
+            "anchor": 2
+          },
+          "best_pool_rank": 2,
+          "best_pool_voter": "anchor",
+          "best_passed_rank": 2,
+          "gold_pos": 3,
+          "gold_best_pool_rank": 1,
+          "unfiltered_rank": null,
+          "reason": "hit"
+        }
+      ]
+    },
+    {
+      "id": "q71",
+      "question": "入职 4 个月一直没签合同，二倍工资能要几个月？",
+      "complexity": "simple",
+      "final_topk": 3,
+      "per_topk": 4,
+      "rewrite_type": "direct",
+      "prod_mode": "hybrid",
+      "use_multi": false,
+      "intent_subs": [
+        "入职4个月未签订书面劳动合同，二倍工资可以主张几个月"
+      ],
+      "gold_subs": [
+        "二倍工资的起算与截止",
+        "未签合同的法律后果"
+      ],
+      "expected": [
+        "中华人民共和国劳动合同法实施条例#第六条",
+        "中华人民共和国劳动合同法#第八十二条"
+      ],
+      "prod_hits": [
+        "中华人民共和国劳动合同法#第八十二条",
+        "中华人民共和国劳动合同法实施条例#第六条",
+        "中华人民共和国劳动合同法实施条例#第七条"
+      ],
+      "gold_hits": [
+        "中华人民共和国劳动合同法#第八十二条",
+        "中华人民共和国劳动合同法实施条例#第六条",
+        "中华人民共和国劳动合同法实施条例#第七条"
+      ],
+      "prod_recall": 1.0,
+      "gold_recall": 1.0,
+      "items": [
+        {
+          "article": "中华人民共和国劳动合同法实施条例#第六条",
+          "prod_pos": 2,
+          "voter_ranks": {
+            "anchor": 2
+          },
+          "best_pool_rank": 2,
+          "best_pool_voter": "anchor",
+          "best_passed_rank": 2,
+          "gold_pos": 2,
+          "gold_best_pool_rank": 1,
+          "unfiltered_rank": null,
+          "reason": "hit"
+        },
+        {
+          "article": "中华人民共和国劳动合同法#第八十二条",
+          "prod_pos": 1,
+          "voter_ranks": {
+            "anchor": 1
+          },
+          "best_pool_rank": 1,
+          "best_pool_voter": "anchor",
+          "best_passed_rank": 1,
+          "gold_pos": 1,
+          "gold_best_pool_rank": 1,
+          "unfiltered_rank": null,
+          "reason": "hit"
+        }
+      ]
+    },
+    {
+      "id": "q72",
+      "question": "劳务派遣工被用工单位退回，派遣公司能直接解除劳动合同吗？",
+      "complexity": "medium",
+      "final_topk": 5,
+      "per_topk": 7,
+      "rewrite_type": "direct",
+      "prod_mode": "hybrid",
+      "use_multi": false,
+      "intent_subs": [
+        "劳务派遣工被用工单位退回后，派遣单位能否直接解除劳动合同"
+      ],
+      "gold_subs": [
+        "退回的法定情形",
+        "违法解除的后果"
+      ],
+      "expected": [
+        "中华人民共和国劳动合同法#第六十五条",
+        "中华人民共和国劳动合同法实施条例#第三十二条"
+      ],
+      "prod_hits": [
+        "中华人民共和国劳动合同法#第六十五条",
+        "中华人民共和国劳动合同法实施条例#第三十二条",
+        "中华人民共和国劳动合同法实施条例#第三十一条",
+        "中华人民共和国劳动合同法#第三十七条",
+        "中华人民共和国劳动合同法#第三十八条"
+      ],
+      "gold_hits": [
+        "中华人民共和国劳动合同法#第六十五条",
+        "中华人民共和国劳动合同法#第九十条",
+        "中华人民共和国劳动合同法实施条例#第三十二条",
+        "中华人民共和国民法典#第六百四十二条",
+        "中华人民共和国劳动法#第一百零二条"
+      ],
+      "prod_recall": 1.0,
+      "gold_recall": 1.0,
+      "items": [
+        {
+          "article": "中华人民共和国劳动合同法#第六十五条",
+          "prod_pos": 1,
+          "voter_ranks": {
+            "anchor": 1
+          },
+          "best_pool_rank": 1,
+          "best_pool_voter": "anchor",
+          "best_passed_rank": 1,
+          "gold_pos": 1,
+          "gold_best_pool_rank": 1,
+          "unfiltered_rank": null,
+          "reason": "hit"
+        },
+        {
+          "article": "中华人民共和国劳动合同法实施条例#第三十二条",
+          "prod_pos": 2,
+          "voter_ranks": {
+            "anchor": 2
+          },
+          "best_pool_rank": 2,
+          "best_pool_voter": "anchor",
+          "best_passed_rank": 2,
+          "gold_pos": 3,
+          "gold_best_pool_rank": 2,
+          "unfiltered_rank": null,
+          "reason": "hit"
+        }
+      ]
+    },
+    {
+      "id": "q73",
+      "question": "工伤后公司没缴工伤保险，医疗费和伤残补助该找谁，能去仲裁吗？",
+      "complexity": "complex",
+      "final_topk": 8,
+      "per_topk": 12,
+      "rewrite_type": "decompose",
+      "prod_mode": "multi",
+      "use_multi": true,
+      "intent_subs": [
+        "用人单位未依法缴纳工伤保险费，职工发生工伤的医疗费用和工伤保险待遇由谁承担",
+        "工伤职工与用人单位就工伤待遇发生争议能否申请劳动仲裁"
+      ],
+      "gold_subs": [
+        "未参保时的赔付主体",
+        "工伤待遇争议的救济途径"
+      ],
+      "expected": [
+        "工伤保险条例#第六十二条",
+        "中华人民共和国劳动争议调解仲裁法#第二条"
+      ],
+      "prod_hits": [
+        "中华人民共和国劳动争议调解仲裁法#第九条",
+        "工伤保险条例#第六十二条",
+        "工伤保险条例#第五十四条",
+        "中华人民共和国劳动争议调解仲裁法#第十六条",
+        "工伤保险条例#第十七条",
+        "中华人民共和国劳动争议调解仲裁法#第四十四条",
+        "工伤保险条例#第四十三条",
+        "工伤保险条例#第三十一条"
+      ],
+      "gold_hits": [
+        "中华人民共和国劳动争议调解仲裁法#第九条",
+        "中华人民共和国民法典#第一千二百一十六条",
+        "工伤保险条例#第五十四条",
+        "中华人民共和国劳动争议调解仲裁法#第十六条",
+        "中华人民共和国民法典#第一千二百一十三条",
+        "工伤保险条例#第五十五条",
+        "工伤保险条例#第六十二条",
+        "中华人民共和国劳动争议调解仲裁法#第四十七条"
+      ],
+      "prod_recall": 0.5,
+      "gold_recall": 0.5,
+      "items": [
+        {
+          "article": "工伤保险条例#第六十二条",
+          "prod_pos": 2,
+          "voter_ranks": {
+            "anchor": 3,
+            "intent1": 1
+          },
+          "best_pool_rank": 1,
+          "best_pool_voter": "intent1",
+          "best_passed_rank": 1,
+          "gold_pos": 7,
+          "gold_best_pool_rank": 1,
+          "unfiltered_rank": null,
+          "reason": "hit"
+        },
+        {
+          "article": "中华人民共和国劳动争议调解仲裁法#第二条",
+          "prod_pos": null,
+          "voter_ranks": {
+            "intent2": 13
+          },
+          "best_pool_rank": 13,
+          "best_pool_voter": "intent2",
+          "best_passed_rank": null,
+          "gold_pos": null,
+          "gold_best_pool_rank": 12,
+          "unfiltered_rank": null,
+          "reason": "per_subquery_quota"
+        }
+      ]
+    },
+    {
+      "id": "q74",
+      "question": "年假没安排也没给钱，职工可以怎么维权？",
+      "complexity": "medium",
+      "final_topk": 5,
+      "per_topk": 7,
+      "rewrite_type": "decompose",
+      "prod_mode": "multi",
+      "use_multi": true,
+      "intent_subs": [
+        "用人单位未安排职工休年休假且未支付未休年休假工资报酬，职工如何维权",
+        "未休年休假工资报酬的支付标准与计算方式",
+        "未休年休假争议申请劳动仲裁的时效与程序"
+      ],
+      "gold_subs": [
+        "未休年假的补偿标准",
+        "不支付报酬的行政与司法救济"
+      ],
+      "expected": [
+        "职工带薪年休假条例#第五条",
+        "职工带薪年休假条例#第七条"
+      ],
+      "prod_hits": [
+        "职工带薪年休假条例#第七条",
+        "职工带薪年休假条例#第五条",
+        "中华人民共和国劳动争议调解仲裁法#第二十七条",
+        "职工带薪年休假条例#第六条",
+        "中华人民共和国劳动争议调解仲裁法#第四十七条"
+      ],
+      "gold_hits": [
+        "职工带薪年休假条例#第七条",
+        "职工带薪年休假条例#第五条",
+        "中华人民共和国劳动合同法#第八十五条",
+        "职工带薪年休假条例#第六条",
+        "中华人民共和国劳动合同法#第三十条"
+      ],
+      "prod_recall": 1.0,
+      "gold_recall": 1.0,
+      "items": [
+        {
+          "article": "职工带薪年休假条例#第五条",
+          "prod_pos": 2,
+          "voter_ranks": {
+            "anchor": 6,
+            "intent1": 2,
+            "intent2": 1
+          },
+          "best_pool_rank": 1,
+          "best_pool_voter": "intent2",
+          "best_passed_rank": 1,
+          "gold_pos": 2,
+          "gold_best_pool_rank": 1,
+          "unfiltered_rank": null,
+          "reason": "hit"
+        },
+        {
+          "article": "职工带薪年休假条例#第七条",
+          "prod_pos": 1,
+          "voter_ranks": {
+            "anchor": 1,
+            "intent1": 1,
+            "intent2": 2,
+            "intent3": 25
+          },
+          "best_pool_rank": 1,
+          "best_pool_voter": "anchor",
+          "best_passed_rank": 1,
+          "gold_pos": 1,
+          "gold_best_pool_rank": 1,
+          "unfiltered_rank": null,
+          "reason": "hit"
+        }
+      ]
+    },
+    {
+      "id": "q75",
+      "question": "公司拖欠工资两年了，劳动关系还在，仲裁时效过了吗？",
+      "complexity": "medium",
+      "final_topk": 5,
+      "per_topk": 7,
+      "rewrite_type": "direct",
+      "prod_mode": "hybrid",
+      "use_multi": false,
+      "intent_subs": [
+        "劳动关系存续期间拖欠劳动报酬的仲裁时效如何计算",
+        "拖欠工资两年劳动关系仍在是否超过仲裁时效"
+      ],
+      "gold_subs": [
+        "拖欠劳动报酬的时效例外",
+        "用人单位的支付义务"
+      ],
+      "expected": [
+        "中华人民共和国劳动争议调解仲裁法#第二十七条",
+        "中华人民共和国劳动合同法#第三十条"
+      ],
+      "prod_hits": [
+        "中华人民共和国劳动争议调解仲裁法#第二十七条",
+        "中华人民共和国劳动争议调解仲裁法#第十六条",
+        "中华人民共和国劳动争议调解仲裁法#第九条",
+        "中华人民共和国劳动争议调解仲裁法#第五十一条",
+        "中华人民共和国劳动争议调解仲裁法#第四十三条"
+      ],
+      "gold_hits": [
+        "中华人民共和国劳动争议调解仲裁法#第二十七条",
+        "中华人民共和国劳动合同法#第三十条",
+        "中华人民共和国劳动争议调解仲裁法#第十六条",
+        "中华人民共和国劳动合同法#第八十五条",
+        "中华人民共和国劳动争议调解仲裁法#第九条"
+      ],
+      "prod_recall": 0.5,
+      "gold_recall": 1.0,
+      "items": [
+        {
+          "article": "中华人民共和国劳动争议调解仲裁法#第二十七条",
+          "prod_pos": 1,
+          "voter_ranks": {
+            "anchor": 1
+          },
+          "best_pool_rank": 1,
+          "best_pool_voter": "anchor",
+          "best_passed_rank": 1,
+          "gold_pos": 1,
+          "gold_best_pool_rank": 1,
+          "unfiltered_rank": null,
+          "reason": "hit"
+        },
+        {
+          "article": "中华人民共和国劳动合同法#第三十条",
+          "prod_pos": null,
+          "voter_ranks": {
+            "anchor": 7
+          },
+          "best_pool_rank": 7,
+          "best_pool_voter": "anchor",
+          "best_passed_rank": 7,
+          "gold_pos": 2,
+          "gold_best_pool_rank": 1,
+          "unfiltered_rank": null,
+          "reason": "topk_truncate"
+        }
+      ]
+    },
+    {
+      "id": "q76",
+      "question": "仲裁裁决是终局的，劳动者不服还能起诉吗？",
+      "complexity": "simple",
+      "final_topk": 3,
+      "per_topk": 4,
+      "rewrite_type": "direct",
+      "prod_mode": "dense",
+      "use_multi": false,
+      "intent_subs": [
+        "终局裁决劳动者不服能否向人民法院起诉"
+      ],
+      "gold_subs": [
+        "终局裁决的范围",
+        "劳动者的起诉权"
+      ],
+      "expected": [
+        "中华人民共和国劳动争议调解仲裁法#第四十七条",
+        "中华人民共和国劳动争议调解仲裁法#第四十八条"
+      ],
+      "prod_hits": [
+        "中华人民共和国劳动争议调解仲裁法#第四十八条",
+        "中华人民共和国劳动争议调解仲裁法#第五十条",
+        "中华人民共和国劳动争议调解仲裁法#第五条"
+      ],
+      "gold_hits": [
+        "中华人民共和国劳动争议调解仲裁法#第四十八条",
+        "中华人民共和国劳动争议调解仲裁法#第四十七条",
+        "中华人民共和国劳动争议调解仲裁法#第五十条"
+      ],
+      "prod_recall": 0.5,
+      "gold_recall": 1.0,
+      "items": [
+        {
+          "article": "中华人民共和国劳动争议调解仲裁法#第四十七条",
+          "prod_pos": null,
+          "voter_ranks": {
+            "anchor": 5
+          },
+          "best_pool_rank": 5,
+          "best_pool_voter": "anchor",
+          "best_passed_rank": null,
+          "gold_pos": 2,
+          "gold_best_pool_rank": 1,
+          "unfiltered_rank": null,
+          "reason": "topk_truncate"
+        },
+        {
+          "article": "中华人民共和国劳动争议调解仲裁法#第四十八条",
+          "prod_pos": 1,
+          "voter_ranks": {
+            "anchor": 1
+          },
+          "best_pool_rank": 1,
+          "best_pool_voter": "anchor",
+          "best_passed_rank": 1,
+          "gold_pos": 1,
+          "gold_best_pool_rank": 1,
+          "unfiltered_rank": null,
+          "reason": "hit"
+        }
+      ]
+    },
+    {
+      "id": "q77",
+      "question": "用人单位对终局裁决不服，能向法院申请撤销吗？",
+      "complexity": "simple",
+      "final_topk": 3,
+      "per_topk": 4,
+      "rewrite_type": "direct",
+      "prod_mode": "dense",
+      "use_multi": false,
+      "intent_subs": [
+        "用人单位对终局裁决不服能否向法院申请撤销"
+      ],
+      "gold_subs": [
+        "单位申请撤销的法定事由",
+        "终局裁决的适用范围"
+      ],
+      "expected": [
+        "中华人民共和国劳动争议调解仲裁法#第四十九条",
+        "中华人民共和国劳动争议调解仲裁法#第四十七条"
+      ],
+      "prod_hits": [
+        "中华人民共和国劳动争议调解仲裁法#第四十九条",
+        "中华人民共和国劳动争议调解仲裁法#第四十八条",
+        "中华人民共和国劳动争议调解仲裁法#第三十六条"
+      ],
+      "gold_hits": [
+        "中华人民共和国劳动争议调解仲裁法#第四十九条",
+        "中华人民共和国民法典#第六十九条",
+        "中华人民共和国劳动争议调解仲裁法#第四十七条"
+      ],
+      "prod_recall": 0.5,
+      "gold_recall": 1.0,
+      "items": [
+        {
+          "article": "中华人民共和国劳动争议调解仲裁法#第四十九条",
+          "prod_pos": 1,
+          "voter_ranks": {
+            "anchor": 1
+          },
+          "best_pool_rank": 1,
+          "best_pool_voter": "anchor",
+          "best_passed_rank": 1,
+          "gold_pos": 1,
+          "gold_best_pool_rank": 1,
+          "unfiltered_rank": null,
+          "reason": "hit"
+        },
+        {
+          "article": "中华人民共和国劳动争议调解仲裁法#第四十七条",
+          "prod_pos": null,
+          "voter_ranks": {
+            "anchor": 7
+          },
+          "best_pool_rank": 7,
+          "best_pool_voter": "anchor",
+          "best_passed_rank": null,
+          "gold_pos": 3,
+          "gold_best_pool_rank": 1,
+          "unfiltered_rank": null,
+          "reason": "topk_truncate"
+        }
+      ]
+    },
+    {
+      "id": "q78",
+      "question": "公司违法解除合同，赔偿金和经济补偿能同时主张吗？",
+      "complexity": "medium",
+      "final_topk": 5,
+      "per_topk": 7,
+      "rewrite_type": "decompose",
+      "prod_mode": "multi",
+      "use_multi": true,
+      "intent_subs": [
+        "违法解除劳动合同赔偿金与经济补偿能否同时主张",
+        "违法解除劳动合同赔偿金计算标准 劳动合同法第八十七条",
+        "解除劳动合同经济补偿适用情形 劳动合同法第四十六条"
+      ],
+      "gold_subs": [
+        "赔偿金与经济补偿的关系",
+        "赔偿金的计算标准"
+      ],
+      "expected": [
+        "中华人民共和国劳动合同法实施条例#第二十五条",
+        "中华人民共和国劳动合同法#第八十七条"
+      ],
+      "prod_hits": [
+        "中华人民共和国劳动合同法实施条例#第二十五条",
+        "中华人民共和国劳动合同法#第四十六条",
+        "中华人民共和国劳动合同法#第八十七条",
+        "中华人民共和国劳动合同法实施条例#第三十一条",
+        "中华人民共和国劳动合同法实施条例#第二十二条"
+      ],
+      "gold_hits": [
+        "中华人民共和国劳动合同法实施条例#第二十五条",
+        "中华人民共和国劳动合同法#第八十七条",
+        "中华人民共和国劳动法#第九十一条",
+        "中华人民共和国劳动合同法#第八十五条",
+        "中华人民共和国劳动合同法实施条例#第二十二条"
+      ],
+      "prod_recall": 1.0,
+      "gold_recall": 1.0,
+      "items": [
+        {
+          "article": "中华人民共和国劳动合同法实施条例#第二十五条",
+          "prod_pos": 1,
+          "voter_ranks": {
+            "anchor": 1,
+            "intent1": 1,
+            "intent2": 1,
+            "intent3": 10
+          },
+          "best_pool_rank": 1,
+          "best_pool_voter": "anchor",
+          "best_passed_rank": 1,
+          "gold_pos": 1,
+          "gold_best_pool_rank": 1,
+          "unfiltered_rank": null,
+          "reason": "hit"
+        },
+        {
+          "article": "中华人民共和国劳动合同法#第八十七条",
+          "prod_pos": 3,
+          "voter_ranks": {
+            "anchor": 2,
+            "intent1": 2,
+            "intent2": 2,
+            "intent3": 8
+          },
+          "best_pool_rank": 2,
+          "best_pool_voter": "anchor",
+          "best_passed_rank": 2,
+          "gold_pos": 2,
+          "gold_best_pool_rank": 2,
+          "unfiltered_rank": null,
+          "reason": "hit"
+        }
+      ]
+    },
+    {
+      "id": "q79",
+      "question": "月薪高于当地社平工资三倍，经济补偿怎么封顶？",
+      "complexity": "medium",
+      "final_topk": 5,
+      "per_topk": 7,
+      "rewrite_type": "direct",
+      "prod_mode": "hybrid",
+      "use_multi": false,
+      "intent_subs": [
+        "经济补偿的月工资高于用人单位所在直辖市、设区的市级人民政府公布的本地区上年度职工月平均工资三倍时，经济补偿的封顶标准和计算方式"
+      ],
+      "gold_subs": [
+        "三倍封顶规则",
+        "月工资的计算口径"
+      ],
+      "expected": [
+        "中华人民共和国劳动合同法#第四十七条",
+        "中华人民共和国劳动合同法实施条例#第二十七条"
+      ],
+      "prod_hits": [
+        "中华人民共和国劳动合同法#第四十七条",
+        "中华人民共和国劳动合同法实施条例#第二十七条",
+        "中华人民共和国劳动合同法实施条例#第三十四条",
+        "中华人民共和国劳动合同法实施条例#第六条",
+        "中华人民共和国劳动合同法实施条例#第二十五条"
+      ],
+      "gold_hits": [
+        "中华人民共和国劳动合同法#第四十七条",
+        "中华人民共和国民法典#第六百九十条",
+        "中华人民共和国劳动合同法实施条例#第二十七条",
+        "中华人民共和国民法典#第五百八十七条",
+        "中华人民共和国劳动合同法实施条例#第三十四条"
+      ],
+      "prod_recall": 1.0,
+      "gold_recall": 1.0,
+      "items": [
+        {
+          "article": "中华人民共和国劳动合同法#第四十七条",
+          "prod_pos": 1,
+          "voter_ranks": {
+            "anchor": 1
+          },
+          "best_pool_rank": 1,
+          "best_pool_voter": "anchor",
+          "best_passed_rank": 1,
+          "gold_pos": 1,
+          "gold_best_pool_rank": 1,
+          "unfiltered_rank": null,
+          "reason": "hit"
+        },
+        {
+          "article": "中华人民共和国劳动合同法实施条例#第二十七条",
+          "prod_pos": 2,
+          "voter_ranks": {
+            "anchor": 2
+          },
+          "best_pool_rank": 2,
+          "best_pool_voter": "anchor",
+          "best_passed_rank": 2,
+          "gold_pos": 3,
+          "gold_best_pool_rank": 1,
+          "unfiltered_rank": null,
+          "reason": "hit"
+        }
+      ]
+    },
+    {
+      "id": "q80",
+      "question": "试用期工资低于当地最低工资，合法吗？",
+      "complexity": "simple",
+      "final_topk": 3,
+      "per_topk": 4,
+      "rewrite_type": "direct",
+      "prod_mode": "dense",
+      "use_multi": false,
+      "intent_subs": [
+        "试用期工资低于当地最低工资标准是否合法"
+      ],
+      "gold_subs": [
+        "试用期工资的双重下限",
+        "最低工资的强制适用"
+      ],
+      "expected": [
+        "中华人民共和国劳动合同法#第二十条",
+        "中华人民共和国劳动合同法实施条例#第十五条"
+      ],
+      "prod_hits": [
+        "中华人民共和国劳动合同法#第二十条",
+        "中华人民共和国劳动合同法#第八十五条",
+        "中华人民共和国劳动合同法#第五十五条"
+      ],
+      "gold_hits": [
+        "中华人民共和国劳动合同法#第二十条",
+        "中华人民共和国劳动合同法#第八十五条",
+        "中华人民共和国劳动合同法#第八十二条"
+      ],
+      "prod_recall": 0.5,
+      "gold_recall": 0.5,
+      "items": [
+        {
+          "article": "中华人民共和国劳动合同法#第二十条",
+          "prod_pos": 1,
+          "voter_ranks": {
+            "anchor": 1
+          },
+          "best_pool_rank": 1,
+          "best_pool_voter": "anchor",
+          "best_passed_rank": 1,
+          "gold_pos": 1,
+          "gold_best_pool_rank": 1,
+          "unfiltered_rank": null,
+          "reason": "hit"
+        },
+        {
+          "article": "中华人民共和国劳动合同法实施条例#第十五条",
+          "prod_pos": null,
+          "voter_ranks": {},
+          "best_pool_rank": null,
+          "best_pool_voter": "",
+          "best_passed_rank": null,
+          "gold_pos": null,
+          "gold_best_pool_rank": null,
+          "unfiltered_rank": 2,
+          "reason": "law_filter"
+        }
+      ]
+    },
+    {
+      "id": "q81",
+      "question": "连续工作满 10 年，单位必须签无固定期限合同吗？",
+      "complexity": "simple",
+      "final_topk": 3,
+      "per_topk": 4,
+      "rewrite_type": "direct",
+      "prod_mode": "hybrid",
+      "use_multi": false,
+      "intent_subs": [
+        "连续工作满十年，用人单位是否必须订立无固定期限劳动合同"
+      ],
+      "gold_subs": [
+        "无固定期限合同的法定情形",
+        "连续工作年限的起算"
+      ],
+      "expected": [
+        "中华人民共和国劳动合同法#第十四条",
+        "中华人民共和国劳动合同法实施条例#第九条"
+      ],
+      "prod_hits": [
+        "中华人民共和国劳动合同法#第十四条",
+        "中华人民共和国劳动合同法实施条例#第九条",
+        "中华人民共和国劳动合同法实施条例#第十一条"
+      ],
+      "gold_hits": [
+        "中华人民共和国劳动合同法#第十四条",
+        "中华人民共和国劳动合同法实施条例#第九条",
+        "中华人民共和国劳动合同法实施条例#第十一条"
+      ],
+      "prod_recall": 1.0,
+      "gold_recall": 1.0,
+      "items": [
+        {
+          "article": "中华人民共和国劳动合同法#第十四条",
+          "prod_pos": 1,
+          "voter_ranks": {
+            "anchor": 1
+          },
+          "best_pool_rank": 1,
+          "best_pool_voter": "anchor",
+          "best_passed_rank": 1,
+          "gold_pos": 1,
+          "gold_best_pool_rank": 1,
+          "unfiltered_rank": null,
+          "reason": "hit"
+        },
+        {
+          "article": "中华人民共和国劳动合同法实施条例#第九条",
+          "prod_pos": 2,
+          "voter_ranks": {
+            "anchor": 2
+          },
+          "best_pool_rank": 2,
+          "best_pool_voter": "anchor",
+          "best_passed_rank": 2,
+          "gold_pos": 2,
+          "gold_best_pool_rank": 1,
+          "unfiltered_rank": null,
+          "reason": "hit"
+        }
+      ]
+    },
+    {
+      "id": "q82",
+      "question": "公益性岗位能要求签无固定期限合同、要经济补偿吗？",
+      "complexity": "medium",
+      "final_topk": 5,
+      "per_topk": 7,
+      "rewrite_type": "decompose",
+      "prod_mode": "multi",
+      "use_multi": true,
+      "intent_subs": [
+        "公益性岗位是否适用无固定期限劳动合同规定",
+        "公益性岗位解除或终止时能否主张经济补偿"
+      ],
+      "gold_subs": [
+        "公益性岗位的排除适用",
+        "经济补偿的一般情形"
+      ],
+      "expected": [
+        "中华人民共和国劳动合同法实施条例#第十二条",
+        "中华人民共和国劳动合同法#第四十六条"
+      ],
+      "prod_hits": [
+        "中华人民共和国劳动合同法实施条例#第十二条",
+        "中华人民共和国劳动合同法实施条例#第五条",
+        "中华人民共和国劳动合同法#第十四条",
+        "中华人民共和国劳动合同法#第七十一条",
+        "中华人民共和国劳动合同法#第十三条"
+      ],
+      "gold_hits": [
+        "中华人民共和国劳动合同法实施条例#第十二条",
+        "中华人民共和国劳动合同法#第四十六条",
+        "中华人民共和国劳动合同法实施条例#第五条",
+        "中华人民共和国劳动合同法#第十八条",
+        "中华人民共和国劳动合同法#第八十五条"
+      ],
+      "prod_recall": 0.5,
+      "gold_recall": 1.0,
+      "items": [
+        {
+          "article": "中华人民共和国劳动合同法实施条例#第十二条",
+          "prod_pos": 1,
+          "voter_ranks": {
+            "anchor": 1,
+            "intent1": 1,
+            "intent2": 1
+          },
+          "best_pool_rank": 1,
+          "best_pool_voter": "anchor",
+          "best_passed_rank": 1,
+          "gold_pos": 1,
+          "gold_best_pool_rank": 1,
+          "unfiltered_rank": null,
+          "reason": "hit"
+        },
+        {
+          "article": "中华人民共和国劳动合同法#第四十六条",
+          "prod_pos": null,
+          "voter_ranks": {
+            "anchor": 10,
+            "intent1": 23,
+            "intent2": 6
+          },
+          "best_pool_rank": 6,
+          "best_pool_voter": "intent2",
+          "best_passed_rank": 6,
+          "gold_pos": 2,
+          "gold_best_pool_rank": 1,
+          "unfiltered_rank": null,
+          "reason": "fusion_order"
+        }
+      ]
+    },
+    {
+      "id": "q83",
+      "question": "工伤停工期间工资怎么发？评残后生活不能自理，护理费谁出？",
+      "complexity": "medium",
+      "final_topk": 5,
+      "per_topk": 7,
+      "rewrite_type": "decompose",
+      "prod_mode": "multi",
+      "use_multi": true,
+      "intent_subs": [
+        "工伤职工停工留薪期内原工资福利待遇如何发放",
+        "工伤职工评残后生活不能自理的生活护理费由谁承担"
+      ],
+      "gold_subs": [
+        "停工留薪期待遇",
+        "评残后的生活护理费"
+      ],
+      "expected": [
+        "工伤保险条例#第三十三条",
+        "工伤保险条例#第三十四条"
+      ],
+      "prod_hits": [
+        "工伤保险条例#第三十三条",
+        "工伤保险条例#第三十四条",
+        "工伤保险条例#第三十九条",
+        "工伤保险条例#第四十条",
+        "工伤保险条例#第四十一条"
+      ],
+      "gold_hits": [
+        "工伤保险条例#第三十三条",
+        "工伤保险条例#第三十四条",
+        "工伤保险条例#第三十九条",
+        "工伤保险条例#第四十条",
+        "中华人民共和国劳动合同法#第四十七条"
+      ],
+      "prod_recall": 1.0,
+      "gold_recall": 1.0,
+      "items": [
+        {
+          "article": "工伤保险条例#第三十三条",
+          "prod_pos": 1,
+          "voter_ranks": {
+            "anchor": 1,
+            "intent1": 1,
+            "intent2": 2
+          },
+          "best_pool_rank": 1,
+          "best_pool_voter": "anchor",
+          "best_passed_rank": 1,
+          "gold_pos": 1,
+          "gold_best_pool_rank": 1,
+          "unfiltered_rank": null,
+          "reason": "hit"
+        },
+        {
+          "article": "工伤保险条例#第三十四条",
+          "prod_pos": 2,
+          "voter_ranks": {
+            "anchor": 2,
+            "intent1": 9,
+            "intent2": 1
+          },
+          "best_pool_rank": 1,
+          "best_pool_voter": "intent2",
+          "best_passed_rank": 1,
+          "gold_pos": 2,
+          "gold_best_pool_rank": 1,
+          "unfiltered_rank": null,
+          "reason": "hit"
+        }
+      ]
+    },
+    {
+      "id": "q84",
+      "question": "七级伤残，合同到期单位不续签，能拿哪些钱？",
+      "complexity": "complex",
+      "final_topk": 8,
+      "per_topk": 12,
+      "rewrite_type": "decompose",
+      "prod_mode": "multi",
+      "use_multi": true,
+      "intent_subs": [
+        "七级伤残职工劳动合同到期单位不续签，可主张哪些工伤保险待遇",
+        "七级伤残一次性工伤医疗补助金和一次性伤残就业补助金标准",
+        "劳动合同到期终止单位不续签是否需支付经济补偿金"
+      ],
+      "gold_subs": [
+        "七级伤残的待遇项目",
+        "合同期满终止的经济补偿"
+      ],
+      "expected": [
+        "工伤保险条例#第三十七条",
+        "中华人民共和国劳动合同法#第四十六条"
+      ],
+      "prod_hits": [
+        "工伤保险条例#第三十七条",
+        "中华人民共和国劳动合同法#第四十六条",
+        "工伤保险条例#第四十条",
+        "工伤保险条例#第四十五条",
+        "工伤保险条例#第三十六条",
+        "中华人民共和国劳动合同法#第七十一条",
+        "工伤保险条例#第三十九条",
+        "中华人民共和国劳动合同法#第八十七条"
+      ],
+      "gold_hits": [
+        "工伤保险条例#第三十七条",
+        "中华人民共和国劳动合同法#第四十七条",
+        "工伤保险条例#第四十条",
+        "工伤保险条例#第三十六条",
+        "中华人民共和国劳动合同法#第八十七条",
+        "工伤保险条例#第四十五条",
+        "工伤保险条例#第三十四条",
+        "中华人民共和国劳动合同法#第四十六条"
+      ],
+      "prod_recall": 1.0,
+      "gold_recall": 1.0,
+      "items": [
+        {
+          "article": "工伤保险条例#第三十七条",
+          "prod_pos": 1,
+          "voter_ranks": {
+            "anchor": 1,
+            "intent1": 1,
+            "intent2": 1
+          },
+          "best_pool_rank": 1,
+          "best_pool_voter": "anchor",
+          "best_passed_rank": 1,
+          "gold_pos": 1,
+          "gold_best_pool_rank": 1,
+          "unfiltered_rank": null,
+          "reason": "hit"
+        },
+        {
+          "article": "中华人民共和国劳动合同法#第四十六条",
+          "prod_pos": 2,
+          "voter_ranks": {
+            "intent3": 1
+          },
+          "best_pool_rank": 1,
+          "best_pool_voter": "intent3",
+          "best_passed_rank": 1,
+          "gold_pos": 8,
+          "gold_best_pool_rank": 3,
+          "unfiltered_rank": null,
+          "reason": "hit"
+        }
+      ]
+    },
+    {
+      "id": "q85",
+      "question": "职工工亡但单位没缴工伤保险，近亲属能领哪些钱、找谁领？",
+      "complexity": "complex",
+      "final_topk": 8,
+      "per_topk": 12,
+      "rewrite_type": "decompose",
+      "prod_mode": "multi",
+      "use_multi": true,
+      "intent_subs": [
+        "用人单位未依法缴纳工伤保险费，职工因工死亡，近亲属可领取的工伤保险待遇项目及标准",
+        "未参保单位职工工亡，工伤保险待遇由用人单位支付还是工伤保险基金支付"
+      ],
+      "gold_subs": [
+        "工亡待遇的项目与标准",
+        "未参保时的支付主体"
+      ],
+      "expected": [
+        "工伤保险条例#第三十九条",
+        "工伤保险条例#第六十二条"
+      ],
+      "prod_hits": [
+        "工伤保险条例#第三十九条",
+        "工伤保险条例#第六十二条",
+        "工伤保险条例#第四十一条",
+        "工伤保险条例#第六十六条",
+        "工伤保险条例#第三十条",
+        "工伤保险条例#第十九条",
+        "工伤保险条例#第十条",
+        "工伤保险条例#第四十三条"
+      ],
+      "gold_hits": [
+        "工伤保险条例#第三十九条",
+        "工伤保险条例#第六十二条",
+        "工伤保险条例#第四十一条",
+        "工伤保险条例#第三十条",
+        "工伤保险条例#第六十五条",
+        "工伤保险条例#第六十六条",
+        "中华人民共和国劳动合同法#第五十八条",
+        "工伤保险条例#第三十七条"
+      ],
+      "prod_recall": 1.0,
+      "gold_recall": 1.0,
+      "items": [
+        {
+          "article": "工伤保险条例#第三十九条",
+          "prod_pos": 1,
+          "voter_ranks": {
+            "anchor": 1,
+            "intent1": 1,
+            "intent2": 3
+          },
+          "best_pool_rank": 1,
+          "best_pool_voter": "anchor",
+          "best_passed_rank": 1,
+          "gold_pos": 1,
+          "gold_best_pool_rank": 1,
+          "unfiltered_rank": null,
+          "reason": "hit"
+        },
+        {
+          "article": "工伤保险条例#第六十二条",
+          "prod_pos": 2,
+          "voter_ranks": {
+            "anchor": 4,
+            "intent1": 2,
+            "intent2": 1
+          },
+          "best_pool_rank": 1,
+          "best_pool_voter": "intent2",
+          "best_passed_rank": 1,
+          "gold_pos": 2,
+          "gold_best_pool_rank": 1,
+          "unfiltered_rank": null,
+          "reason": "hit"
+        }
+      ]
+    },
+    {
+      "id": "q86",
+      "question": "工伤认定时单位不承认是工伤，由谁举证？",
+      "complexity": "simple",
+      "final_topk": 3,
+      "per_topk": 4,
+      "rewrite_type": "direct",
+      "prod_mode": "hybrid",
+      "use_multi": false,
+      "intent_subs": [
+        "工伤认定中用人单位不承认工伤的举证责任由谁承担"
+      ],
+      "gold_subs": [
+        "工伤认定的举证责任",
+        "应当认定工伤的情形"
+      ],
+      "expected": [
+        "工伤保险条例#第十九条",
+        "工伤保险条例#第十四条"
+      ],
+      "prod_hits": [
+        "工伤保险条例#第十九条",
+        "工伤保险条例#第五十五条",
+        "工伤保险条例#第二十三条"
+      ],
+      "gold_hits": [
+        "工伤保险条例#第十九条",
+        "工伤保险条例#第十四条",
+        "工伤保险条例#第五十五条"
+      ],
+      "prod_recall": 0.5,
+      "gold_recall": 1.0,
+      "items": [
+        {
+          "article": "工伤保险条例#第十九条",
+          "prod_pos": 1,
+          "voter_ranks": {
+            "anchor": 1
+          },
+          "best_pool_rank": 1,
+          "best_pool_voter": "anchor",
+          "best_passed_rank": 1,
+          "gold_pos": 1,
+          "gold_best_pool_rank": 1,
+          "unfiltered_rank": null,
+          "reason": "hit"
+        },
+        {
+          "article": "工伤保险条例#第十四条",
+          "prod_pos": null,
+          "voter_ranks": {
+            "anchor": 10
+          },
+          "best_pool_rank": 10,
+          "best_pool_voter": "anchor",
+          "best_passed_rank": null,
+          "gold_pos": 2,
+          "gold_best_pool_rank": 1,
+          "unfiltered_rank": null,
+          "reason": "topk_truncate"
+        }
+      ]
+    },
+    {
+      "id": "q87",
+      "question": "达成调解协议后单位不履行，职工怎么办？",
+      "complexity": "medium",
+      "final_topk": 5,
+      "per_topk": 7,
+      "rewrite_type": "direct",
+      "prod_mode": "hybrid",
+      "use_multi": false,
+      "intent_subs": [
+        "劳动争议调解协议达成后用人单位不履行，劳动者可以申请仲裁或向法院申请支付令吗"
+      ],
+      "gold_subs": [
+        "调解协议的效力",
+        "支付令的适用"
+      ],
+      "expected": [
+        "中华人民共和国劳动争议调解仲裁法#第十五条",
+        "中华人民共和国劳动争议调解仲裁法#第十六条"
+      ],
+      "prod_hits": [
+        "中华人民共和国劳动争议调解仲裁法#第十六条",
+        "中华人民共和国劳动争议调解仲裁法#第五条",
+        "中华人民共和国劳动争议调解仲裁法#第十五条",
+        "中华人民共和国劳动争议调解仲裁法#第五十一条",
+        "中华人民共和国劳动争议调解仲裁法#第十四条"
+      ],
+      "gold_hits": [
+        "中华人民共和国劳动争议调解仲裁法#第十六条",
+        "中华人民共和国劳动争议调解仲裁法#第四十二条",
+        "中华人民共和国劳动争议调解仲裁法#第五条",
+        "中华人民共和国劳动争议调解仲裁法#第十四条",
+        "中华人民共和国劳动合同法#第三十条"
+      ],
+      "prod_recall": 1.0,
+      "gold_recall": 0.5,
+      "items": [
+        {
+          "article": "中华人民共和国劳动争议调解仲裁法#第十五条",
+          "prod_pos": 3,
+          "voter_ranks": {
+            "anchor": 3
+          },
+          "best_pool_rank": 3,
+          "best_pool_voter": "anchor",
+          "best_passed_rank": 3,
+          "gold_pos": null,
+          "gold_best_pool_rank": 3,
+          "unfiltered_rank": null,
+          "reason": "hit"
+        },
+        {
+          "article": "中华人民共和国劳动争议调解仲裁法#第十六条",
+          "prod_pos": 1,
+          "voter_ranks": {
+            "anchor": 1
+          },
+          "best_pool_rank": 1,
+          "best_pool_voter": "anchor",
+          "best_passed_rank": 1,
+          "gold_pos": 1,
+          "gold_best_pool_rank": 1,
+          "unfiltered_rank": null,
+          "reason": "hit"
+        }
+      ]
+    },
+    {
+      "id": "q88",
+      "question": "调解不成，还能申请劳动仲裁吗？",
+      "complexity": "simple",
+      "final_topk": 3,
+      "per_topk": 4,
+      "rewrite_type": "direct",
+      "prod_mode": "dense",
+      "use_multi": false,
+      "intent_subs": [
+        "调解不成是否可以申请劳动仲裁"
+      ],
+      "gold_subs": [
+        "调解的程序与效力",
+        "调解与仲裁的衔接"
+      ],
+      "expected": [
+        "中华人民共和国劳动争议调解仲裁法#第十四条",
+        "中华人民共和国劳动争议调解仲裁法#第五条"
+      ],
+      "prod_hits": [
+        "中华人民共和国劳动争议调解仲裁法#第五条",
+        "中华人民共和国劳动争议调解仲裁法#第十四条",
+        "中华人民共和国劳动争议调解仲裁法#第十五条"
+      ],
+      "gold_hits": [
+        "中华人民共和国劳动争议调解仲裁法#第五条",
+        "中华人民共和国劳动争议调解仲裁法#第四十二条",
+        "中华人民共和国劳动争议调解仲裁法#第十五条"
+      ],
+      "prod_recall": 1.0,
+      "gold_recall": 0.5,
+      "items": [
+        {
+          "article": "中华人民共和国劳动争议调解仲裁法#第十四条",
+          "prod_pos": 2,
+          "voter_ranks": {
+            "anchor": 2
+          },
+          "best_pool_rank": 2,
+          "best_pool_voter": "anchor",
+          "best_passed_rank": 2,
+          "gold_pos": null,
+          "gold_best_pool_rank": 2,
+          "unfiltered_rank": null,
+          "reason": "hit"
+        },
+        {
+          "article": "中华人民共和国劳动争议调解仲裁法#第五条",
+          "prod_pos": 1,
+          "voter_ranks": {
+            "anchor": 1
+          },
+          "best_pool_rank": 1,
+          "best_pool_voter": "anchor",
+          "best_passed_rank": 1,
+          "gold_pos": 1,
+          "gold_best_pool_rank": 1,
+          "unfiltered_rank": null,
+          "reason": "hit"
+        }
+      ]
+    },
+    {
+      "id": "q89",
+      "question": "公司拖欠工资，能直接向法院申请支付令吗？",
+      "complexity": "simple",
+      "final_topk": 3,
+      "per_topk": 4,
+      "rewrite_type": "direct",
+      "prod_mode": "hybrid",
+      "use_multi": false,
+      "intent_subs": [
+        "用人单位拖欠劳动报酬，劳动者能否直接向人民法院申请支付令"
+      ],
+      "gold_subs": [
+        "支付令的依据",
+        "调解协议与支付令"
+      ],
+      "expected": [
+        "中华人民共和国劳动合同法#第三十条",
+        "中华人民共和国劳动争议调解仲裁法#第十六条"
+      ],
+      "prod_hits": [
+        "中华人民共和国劳动合同法#第三十条",
+        "中华人民共和国劳动争议调解仲裁法#第十六条",
+        "中华人民共和国劳动争议调解仲裁法#第九条"
+      ],
+      "gold_hits": [
+        "中华人民共和国劳动合同法#第三十条",
+        "中华人民共和国劳动争议调解仲裁法#第十六条",
+        "中华人民共和国劳动争议调解仲裁法#第十四条"
+      ],
+      "prod_recall": 1.0,
+      "gold_recall": 1.0,
+      "items": [
+        {
+          "article": "中华人民共和国劳动合同法#第三十条",
+          "prod_pos": 1,
+          "voter_ranks": {
+            "anchor": 1
+          },
+          "best_pool_rank": 1,
+          "best_pool_voter": "anchor",
+          "best_passed_rank": 1,
+          "gold_pos": 1,
+          "gold_best_pool_rank": 1,
+          "unfiltered_rank": null,
+          "reason": "hit"
+        },
+        {
+          "article": "中华人民共和国劳动争议调解仲裁法#第十六条",
+          "prod_pos": 2,
+          "voter_ranks": {
+            "anchor": 2
+          },
+          "best_pool_rank": 2,
+          "best_pool_voter": "anchor",
+          "best_passed_rank": 2,
+          "gold_pos": 2,
+          "gold_best_pool_rank": 1,
+          "unfiltered_rank": null,
+          "reason": "hit"
+        }
+      ]
+    },
+    {
+      "id": "q90",
+      "question": "服务期的培训费用包括哪些？违约金怎么分摊？",
+      "complexity": "medium",
+      "final_topk": 5,
+      "per_topk": 7,
+      "rewrite_type": "decompose",
+      "prod_mode": "multi",
+      "use_multi": true,
+      "intent_subs": [
+        "服务期协议中培训费用包括哪些项目",
+        "服务期违约金的分摊计算方式"
+      ],
+      "gold_subs": [
+        "培训费用的范围",
+        "违约金的上限与分摊"
+      ],
+      "expected": [
+        "中华人民共和国劳动合同法实施条例#第十六条",
+        "中华人民共和国劳动合同法#第二十二条"
+      ],
+      "prod_hits": [
+        "中华人民共和国劳动合同法#第二十二条",
+        "中华人民共和国劳动合同法实施条例#第十六条",
+        "中华人民共和国劳动合同法实施条例#第二十六条",
+        "中华人民共和国劳动合同法#第十七条",
+        "中华人民共和国劳动合同法实施条例#第二十五条"
+      ],
+      "gold_hits": [
+        "中华人民共和国劳动合同法#第二十二条",
+        "中华人民共和国劳动合同法实施条例#第十六条",
+        "中华人民共和国劳动合同法#第二十五条",
+        "中华人民共和国劳动合同法实施条例#第二十六条",
+        "中华人民共和国劳动合同法#第六十条"
+      ],
+      "prod_recall": 1.0,
+      "gold_recall": 1.0,
+      "items": [
+        {
+          "article": "中华人民共和国劳动合同法实施条例#第十六条",
+          "prod_pos": 2,
+          "voter_ranks": {
+            "anchor": 2,
+            "intent1": 1
+          },
+          "best_pool_rank": 1,
+          "best_pool_voter": "intent1",
+          "best_passed_rank": 1,
+          "gold_pos": 2,
+          "gold_best_pool_rank": 1,
+          "unfiltered_rank": null,
+          "reason": "hit"
+        },
+        {
+          "article": "中华人民共和国劳动合同法#第二十二条",
+          "prod_pos": 1,
+          "voter_ranks": {
+            "anchor": 1,
+            "intent1": 2,
+            "intent2": 1
+          },
+          "best_pool_rank": 1,
+          "best_pool_voter": "anchor",
+          "best_passed_rank": 1,
+          "gold_pos": 1,
+          "gold_best_pool_rank": 1,
+          "unfiltered_rank": null,
+          "reason": "hit"
+        }
+      ]
+    },
+    {
+      "id": "q91",
+      "question": "签了竞业限制但没约定补偿，离职后还要遵守吗？",
+      "complexity": "medium",
+      "final_topk": 5,
+      "per_topk": 7,
+      "rewrite_type": "direct",
+      "prod_mode": "hybrid",
+      "use_multi": false,
+      "intent_subs": [
+        "竞业限制协议未约定经济补偿，劳动者离职后是否仍需履行竞业限制义务"
+      ],
+      "gold_subs": [
+        "竞业限制的补偿义务",
+        "竞业限制期限"
+      ],
+      "expected": [
+        "中华人民共和国劳动合同法#第二十三条",
+        "中华人民共和国劳动合同法#第二十四条"
+      ],
+      "prod_hits": [
+        "中华人民共和国劳动合同法#第二十三条",
+        "中华人民共和国劳动合同法#第二十四条",
+        "中华人民共和国劳动合同法#第九十条",
+        "中华人民共和国劳动合同法实施条例#第二十二条",
+        "中华人民共和国劳动合同法实施条例#第五条"
+      ],
+      "gold_hits": [
+        "中华人民共和国劳动合同法#第二十三条",
+        "中华人民共和国劳动合同法#第二十四条",
+        "中华人民共和国劳动合同法#第九十条",
+        "中华人民共和国劳动合同法实施条例#第二十二条",
+        "中华人民共和国劳动合同法#第八十八条"
+      ],
+      "prod_recall": 1.0,
+      "gold_recall": 1.0,
+      "items": [
+        {
+          "article": "中华人民共和国劳动合同法#第二十三条",
+          "prod_pos": 1,
+          "voter_ranks": {
+            "anchor": 1
+          },
+          "best_pool_rank": 1,
+          "best_pool_voter": "anchor",
+          "best_passed_rank": 1,
+          "gold_pos": 1,
+          "gold_best_pool_rank": 1,
+          "unfiltered_rank": null,
+          "reason": "hit"
+        },
+        {
+          "article": "中华人民共和国劳动合同法#第二十四条",
+          "prod_pos": 2,
+          "voter_ranks": {
+            "anchor": 2
+          },
+          "best_pool_rank": 2,
+          "best_pool_voter": "anchor",
+          "best_passed_rank": 2,
+          "gold_pos": 2,
+          "gold_best_pool_rank": 1,
+          "unfiltered_rank": null,
+          "reason": "hit"
+        }
+      ]
+    },
+    {
+      "id": "q92",
+      "question": "劳务派遣争议中，能把派遣单位和用工单位一起告吗？",
+      "complexity": "medium",
+      "final_topk": 5,
+      "per_topk": 7,
+      "rewrite_type": "direct",
+      "prod_mode": "hybrid",
+      "use_multi": false,
+      "intent_subs": [
+        "劳务派遣争议中派遣单位与用工单位作为共同被告的法律依据"
+      ],
+      "gold_subs": [
+        "共同当事人的规定",
+        "派遣单位的用人单位地位"
+      ],
+      "expected": [
+        "中华人民共和国劳动争议调解仲裁法#第二十二条",
+        "中华人民共和国劳动合同法#第五十八条"
+      ],
+      "prod_hits": [
+        "中华人民共和国劳动争议调解仲裁法#第二十二条",
+        "中华人民共和国劳动合同法#第六十三条",
+        "中华人民共和国劳动合同法#第九十二条",
+        "中华人民共和国劳动合同法#第六十条",
+        "中华人民共和国劳动合同法#第五十九条"
+      ],
+      "gold_hits": [
+        "中华人民共和国劳动争议调解仲裁法#第二十二条",
+        "中华人民共和国劳动合同法#第五十八条",
+        "中华人民共和国劳动合同法#第六十三条",
+        "中华人民共和国劳动争议调解仲裁法#第七条",
+        "中华人民共和国劳动合同法#第六十七条"
+      ],
+      "prod_recall": 0.5,
+      "gold_recall": 1.0,
+      "items": [
+        {
+          "article": "中华人民共和国劳动争议调解仲裁法#第二十二条",
+          "prod_pos": 1,
+          "voter_ranks": {
+            "anchor": 1
+          },
+          "best_pool_rank": 1,
+          "best_pool_voter": "anchor",
+          "best_passed_rank": 1,
+          "gold_pos": 1,
+          "gold_best_pool_rank": 1,
+          "unfiltered_rank": null,
+          "reason": "hit"
+        },
+        {
+          "article": "中华人民共和国劳动合同法#第五十八条",
+          "prod_pos": null,
+          "voter_ranks": {
+            "anchor": 10
+          },
+          "best_pool_rank": 10,
+          "best_pool_voter": "anchor",
+          "best_passed_rank": null,
+          "gold_pos": 2,
+          "gold_best_pool_rank": 1,
+          "unfiltered_rank": null,
+          "reason": "topk_truncate"
+        }
+      ]
+    },
+    {
+      "id": "q93",
+      "question": "一裁终局后，劳动者和用人单位的救济路径有什么不同？",
+      "complexity": "medium",
+      "final_topk": 5,
+      "per_topk": 7,
+      "rewrite_type": "decompose",
+      "prod_mode": "multi",
+      "use_multi": true,
+      "intent_subs": [
+        "一裁终局裁决对劳动者的救济路径：不服终局裁决可以向人民法院起诉",
+        "一裁终局裁决对用人单位的救济路径：可以申请撤销终局裁决的情形和期限"
+      ],
+      "gold_subs": [
+        "劳动者的起诉路径",
+        "用人单位的撤销路径"
+      ],
+      "expected": [
+        "中华人民共和国劳动争议调解仲裁法#第四十八条",
+        "中华人民共和国劳动争议调解仲裁法#第四十九条"
+      ],
+      "prod_hits": [
+        "中华人民共和国劳动争议调解仲裁法#第四十七条",
+        "中华人民共和国劳动争议调解仲裁法#第四十八条",
+        "中华人民共和国劳动争议调解仲裁法#第四十九条",
+        "中华人民共和国劳动合同法实施条例#第二十二条",
+        "中华人民共和国劳动争议调解仲裁法#第五十条"
+      ],
+      "gold_hits": [
+        "中华人民共和国劳动争议调解仲裁法#第四十七条",
+        "中华人民共和国劳动争议调解仲裁法#第四十八条",
+        "中华人民共和国劳动争议调解仲裁法#第四十九条",
+        "中华人民共和国劳动合同法实施条例#第二十二条",
+        "中华人民共和国劳动法#第八十三条"
+      ],
+      "prod_recall": 1.0,
+      "gold_recall": 1.0,
+      "items": [
+        {
+          "article": "中华人民共和国劳动争议调解仲裁法#第四十八条",
+          "prod_pos": 2,
+          "voter_ranks": {
+            "anchor": 8,
+            "intent1": 1,
+            "intent2": 5
+          },
+          "best_pool_rank": 1,
+          "best_pool_voter": "intent1",
+          "best_passed_rank": 1,
+          "gold_pos": 2,
+          "gold_best_pool_rank": 1,
+          "unfiltered_rank": null,
+          "reason": "hit"
+        },
+        {
+          "article": "中华人民共和国劳动争议调解仲裁法#第四十九条",
+          "prod_pos": 3,
+          "voter_ranks": {
+            "anchor": 17,
+            "intent1": 3,
+            "intent2": 1
+          },
+          "best_pool_rank": 1,
+          "best_pool_voter": "intent2",
+          "best_passed_rank": 1,
+          "gold_pos": 3,
+          "gold_best_pool_rank": 1,
+          "unfiltered_rank": null,
+          "reason": "hit"
+        }
+      ]
+    }
+  ]
+}
