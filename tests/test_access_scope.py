@@ -220,7 +220,8 @@ class TestEngineScope:
     def test_cross_version_recomputes_and_same_scope_replays(self, monkeypatch, settings_factory):
         redis = FakeRedis()
         cache = AnswerCache(redis=redis, settings=settings_factory(cache_answer_ttl=3600))
-        plan = make_plan("hybrid")
+        # 缓存键取改写后的 plan.cache_query，桩 plan 必须与真实问题一致
+        plan = make_plan("hybrid", query=QUESTION)
         monkeypatch.setattr(stream_mod, "analyze_query", lambda *a, **kw: plan)
         llm = FakeLLMStream(chunks=[StreamChunk(text=LONG_ANSWER)])
         engine = AnswerEngine(
