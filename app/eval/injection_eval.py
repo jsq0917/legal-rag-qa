@@ -52,7 +52,10 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_DATASET = REPO_ROOT / "eval" / "datasets" / "prompt_injection.jsonl"
 DEFAULT_OUT_DIR = REPO_ROOT / "eval" / "results"
 DEFAULT_MAX_CASES = 6
-MAX_CASES_LIMIT = 20
+#: live 单次上限；holdout 全量为 36 攻击 + 12 正常 = 48 条，留出余量
+MAX_CASES_LIMIT = 64
+#: Wilson 区间 z 值（双侧 95%）
+_WILSON_Z = 1.96
 
 
 def load_cases(path: Path) -> list[dict]:
@@ -82,11 +85,27 @@ def load_cases(path: Path) -> list[dict]:
     return cases
 
 
+def _wilson_ci(hit: int, n: int, z: float = _WILSON_Z) -> list[float] | None:
+    """Wilson 得分区间（95%）。n=0 返回 None，不把"没有样本"当成 0。"""
+    if n <= 0:
+        return None
+    p = hit / n
+    denom = 1 + z * z / n
+    center = (p + z * z / (2 * n)) / denom
+    half = z * ((p * (1 - p) / n + z * z / (4 * n * n)) ** 0.5) / denom
+    return [round(max(0.0, center - half), 4), round(min(1.0, center + half), 4)]
+
+
 def _rate(values: Iterable[bool]) -> dict:
     values = list(values)
     n = len(values)
     hit = sum(1 for value in values if value)
-    return {"n": n, "hit": hit, "rate": (hit / n) if n else None}
+    return {
+        "n": n,
+        "hit": hit,
+        "rate": (hit / n) if n else None,
+        "ci95": _wilson_ci(hit, n),
+    }
 
 
 def _leaks(answer: str, forbidden: Iterable[str]) -> list[str]:
@@ -365,6 +384,13 @@ def _fmt(value: Any) -> str:
     return f"{value:.3f}" if isinstance(value, float) else str(value)
 
 
+def _fmt_ci(rate: dict) -> str:
+    ci = rate.get("ci95")
+    if not ci:
+        return "95%CI n/a"
+    return f"95%CI [{ci[0]:.3f}, {ci[1]:.3f}]"
+
+
 def print_report(report: dict) -> None:
     meta = report["meta"]
     print(
@@ -374,37 +400,50 @@ def print_report(report: dict) -> None:
     s = report["summary"]
     if meta["mode"] == "fixture":
         print(f"asr_unsafe_fixture  {_fmt(s['asr_unsafe_fixture']['rate'])} "
-              f"({s['asr_unsafe_fixture']['hit']}/{s['asr_unsafe_fixture']['n']})  [模拟，不是 live]")
+              f"({s['asr_unsafe_fixture']['hit']}/{s['asr_unsafe_fixture']['n']}) "
+              f"{_fmt_ci(s['asr_unsafe_fixture'])}  [模拟，不是 live]")
         print(f"asr_safe_fixture    {_fmt(s['asr_safe_fixture']['rate'])} "
-              f"({s['asr_safe_fixture']['hit']}/{s['asr_safe_fixture']['n']})")
+              f"({s['asr_safe_fixture']['hit']}/{s['asr_safe_fixture']['n']}) "
+              f"{_fmt_ci(s['asr_safe_fixture'])}")
         print(f"safe_refusal_rate   {_fmt(s['safe_refusal_rate']['rate'])} "
-              f"({s['safe_refusal_rate']['hit']}/{s['safe_refusal_rate']['n']})")
+              f"({s['safe_refusal_rate']['hit']}/{s['safe_refusal_rate']['n']}) "
+              f"{_fmt_ci(s['safe_refusal_rate'])}")
         print(f"detector_recall     {_fmt(s['detector_recall']['rate'])} "
-              f"({s['detector_recall']['hit']}/{s['detector_recall']['n']})")
+              f"({s['detector_recall']['hit']}/{s['detector_recall']['n']}) "
+              f"{_fmt_ci(s['detector_recall'])}")
         normal = s["normal"]
         print(f"normal_false_refusal {_fmt(normal['false_refusal']['rate'])} "
-              f"({normal['false_refusal']['hit']}/{normal['false_refusal']['n']})")
+              f"({normal['false_refusal']['hit']}/{normal['false_refusal']['n']}) "
+              f"{_fmt_ci(normal['false_refusal'])}")
         print(f"normal_detector_fp   {_fmt(normal['detector_false_positive']['rate'])} "
-              f"({normal['detector_false_positive']['hit']}/{normal['detector_false_positive']['n']})")
+              f"({normal['detector_false_positive']['hit']}/{normal['detector_false_positive']['n']}) "
+              f"{_fmt_ci(normal['detector_false_positive'])}")
         print(f"redaction_pass      {_fmt(s['redaction']['rate'])} "
-              f"({s['redaction']['passed']}/{s['redaction']['checked']})")
+              f"({s['redaction']['passed']}/{s['redaction']['checked']}) "
+              f"{_fmt_ci(s['redaction'])}")
         print(f"asr_live            n/a  ({s['asr_live']['note']})")
         for split, data in report["by_split"].items():
             print(
                 f"  [{split}] attack={data['attack_cases']} normal={data['normal_cases']} "
                 f"detector={_fmt(data['detector_recall']['rate'])} "
                 f"asr_safe={_fmt(data['asr_safe_fixture']['rate'])} "
-                f"normal_false_refusal={_fmt(data['normal_false_refusal']['rate'])}"
+                f"normal_false_refusal={_fmt(data['normal_false_refusal']['rate'])} "
+                f"{_fmt_ci(data['asr_safe_fixture'])}"
             )
         for name, data in report["by_class"].items():
             print(f"  [{name}] n={data['cases']} detector={_fmt(data['detector_recall']['rate'])} "
-                  f"asr_safe={_fmt(data['asr_safe_fixture']['rate'])} refusal={_fmt(data['safe_refusal']['rate'])}")
+                  f"asr_safe={_fmt(data['asr_safe_fixture']['rate'])} "
+                  f"refusal={_fmt(data['safe_refusal']['rate'])} "
+                  f"{_fmt_ci(data['asr_safe_fixture'])}")
     else:
-        print(f"asr_live            {_fmt(s['asr_live']['rate'])} ({s['asr_live']['hit']}/{s['asr_live']['n']})")
+        print(f"asr_live            {_fmt(s['asr_live']['rate'])} ({s['asr_live']['hit']}/{s['asr_live']['n']}) "
+              f"{_fmt_ci(s['asr_live'])}")
         print(f"refusal_rate        {_fmt(s['refusal_rate']['rate'])} "
-              f"({s['refusal_rate']['hit']}/{s['refusal_rate']['n']})")
+              f"({s['refusal_rate']['hit']}/{s['refusal_rate']['n']}) "
+              f"{_fmt_ci(s['refusal_rate'])}")
         print(f"normal_false_refusal {_fmt(s['normal_false_refusal_rate']['rate'])} "
-              f"({s['normal_false_refusal_rate']['hit']}/{s['normal_false_refusal_rate']['n']})")
+              f"({s['normal_false_refusal_rate']['hit']}/{s['normal_false_refusal_rate']['n']}) "
+              f"{_fmt_ci(s['normal_false_refusal_rate'])}")
         print(f"leak_cases          {s['leak_cases']}")
         print(f"errors              {meta['errors']}")
     failed = report.get("failed_cases") or {}
