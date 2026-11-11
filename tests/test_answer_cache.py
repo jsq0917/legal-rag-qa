@@ -318,7 +318,7 @@ class TestEngineIntegration:
 
 
 def test_probe_verdict_covers_uncacheable_multi_subquery():
-    """原追问若被拆成多子查询、不产生缓存键，探针必须判它"确实拆解且零命中"。
+    """无缓存键的情形探针必须判红；拆解条数只作观察项，不参与 ok。
 
     这条分支不依赖线上 LLM 的随机拆解结果：这里用合成轮次把"无缓存键"的情形
     固定覆盖住，避免它只在某几次真实运行里偶然出现。
@@ -348,19 +348,26 @@ def test_probe_verdict_covers_uncacheable_multi_subquery():
     }
 
     verdict = _variant_verdict(spec, results, positive_control=True)
-    assert verdict["mode"] == "uncacheable_multi_subquery"
-    assert verdict["criteria"]["decomposed_into_multi_subquery"] is True
+    assert verdict["observations"]["mode"] == "uncacheable_multi_subquery"
+    assert verdict["observations"]["mode_matches_expect"] is True
+    assert verdict["observations"]["a_sub_queries"] == 2
     assert verdict["ok"] is True
 
     # 没有缓存键却出现命中 = 探针必须判红（无键就不该读缓存）
     results["B_new_session"]["turns"][0]["cache"]["hit"] = True
     bad = _variant_verdict(spec, results, positive_control=True)
     assert bad["ok"] is False
-    assert bad["criteria"]["no_cache_hit_b"] is False
+    assert bad["criteria"]["no_hit_without_cache_key"] is False
 
-    # 没有缓存键、也没拆成多子查询：既不是设计行为，也不能算通过
+    # 子查询条数属 LLM 观察项：拆解与否不改变判定，只如实记录
     results["B_new_session"]["turns"][0]["cache"]["hit"] = False
     results["A_multi_turn"]["turns"][1]["sub_queries"] = 1
     undecomposed = _variant_verdict(spec, results, positive_control=True)
-    assert undecomposed["criteria"]["decomposed_into_multi_subquery"] is False
-    assert undecomposed["ok"] is False
+    assert undecomposed["observations"]["a_sub_queries"] == 1
+    assert undecomposed["ok"] is True
+
+    # 原句被替换属确定性缺陷：落到检索的文本必须就是用户原话
+    results["A_multi_turn"]["turns"][1]["query"] = "主动辞职能否主张经济补偿"
+    replaced = _variant_verdict(spec, results, positive_control=True)
+    assert replaced["criteria"]["followup_text_not_replaced"] is False
+    assert replaced["ok"] is False
