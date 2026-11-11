@@ -48,6 +48,7 @@ def make_plan(route: str, *, qa_hit=None, references=None, similarity=None, inte
         route=make_route(route),
         qa=QALookupResult(hit=qa_hit, references=references or [], similarity=similarity, source="mysql_bm25_cosine" if qa_hit else "none"),
         sub_queries=list(intent.sub_queries) or [query],
+        cache_query=query,
     )
 
 

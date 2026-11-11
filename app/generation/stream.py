@@ -208,29 +208,6 @@ class AnswerEngine:
                 yield self._done_frame(result, started, trace.trace_id)
                 return
 
-            # ---- 0.5) 答案级缓存前置：整段回答直接回放 ----
-            # key 由「问题 + 租户/知识库/版本/模型/prompt/as-of」共同决定，
-            # 同一句话换库、换租户、换索引版本都不会互相回放。
-            cache_started = time.perf_counter()
-            cached_answer = self.answer_cache.lookup(
-                query,
-                history=list(history) if history else None,
-                cache_identity=identity,
-            )
-            trace.record(
-                "cache_lookup",
-                latency_ms=int((time.perf_counter() - cache_started) * 1000),
-                layer="answer",
-                hit=cached_answer is not None,
-                identity=identity,
-            )
-            if cached_answer is not None:
-                yield from self._answer_replay(
-                    cached_answer, result, gen_cfg, started, message_id, scope, trace
-                )
-                yield self._done_frame(result, started, trace.trace_id)
-                return
-
             # ---- 意图 + 路由 + 结构化判定（阶段 4 编排入口，含 LLM 降级）----
             yield sse_frame("stage", {"stage": "intent"})
             intent_started = time.perf_counter()
@@ -264,6 +241,38 @@ class AnswerEngine:
                 kb_ids=list(plan.route.kb_ids),
                 reason=plan.route.reason,
             )
+
+            # ---- 0.5) 答案级缓存：必须在独立化改写之后查 ----
+            # key 由「改写后问题 + 租户/知识库/版本/模型/prompt/as-of」共同决定。
+            # 多轮追问原样做键会跨上下文误命中（O1-1/O1-2）；plan.cache_query
+            # 为空表示多子查询且有历史，直接跳过缓存。
+            cache_started = time.perf_counter()
+            cache_query = plan.cache_query
+            cache_eligible = route in self._ANSWER_CACHE_ROUTES and bool(cache_query)
+            cached_answer = (
+                self.answer_cache.lookup(
+                    cache_query,
+                    history=list(history) if history else None,
+                    cache_identity=identity,
+                )
+                if cache_eligible
+                else None
+            )
+            trace.record(
+                "cache_lookup",
+                latency_ms=int((time.perf_counter() - cache_started) * 1000),
+                layer="answer",
+                hit=cached_answer is not None,
+                eligible=cache_eligible,
+                query=cache_query,
+                identity=identity,
+            )
+            if cached_answer is not None:
+                yield from self._answer_replay(
+                    cached_answer, result, gen_cfg, started, message_id, scope, trace
+                )
+                yield self._done_frame(result, started, trace.trace_id)
+                return
 
             yield _meta_frame(
                 message_id,
@@ -474,7 +483,7 @@ class AnswerEngine:
         finally:
             # 第 4 层：客户端断开（GeneratorExit）或任何路径，finally 保证落库一次
             cache_write_started = time.perf_counter()
-            self._cache_answer(query, result, plan, identity=identity, scope=scope)
+            self._cache_answer(result, plan, identity=identity, scope=scope)
             trace.record(
                 "answer_cache_write",
                 latency_ms=int((time.perf_counter() - cache_write_started) * 1000),
@@ -722,7 +731,6 @@ class AnswerEngine:
 
     def _cache_answer(
         self,
-        query: str,
         result: StreamResult,
         plan: QueryPlan | None,
         *,
@@ -740,9 +748,13 @@ class AnswerEngine:
             return
         if not result.content.strip():
             return
+        # 与查询侧同一把键：用独立化改写后的问题；空表示多子查询且有历史，不缓存
+        store_query = plan.cache_query
+        if not store_query:
+            return
         try:
             self.answer_cache.store(
-                query,
+                store_query,
                 answer=strip_citation_note(result.content),
                 sources=result.sources,
                 route=plan.route.route,

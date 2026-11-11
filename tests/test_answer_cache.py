@@ -102,6 +102,16 @@ class TestSelfContained:
     def test_pronoun_question_is_not(self, query):
         assert not is_self_contained(query)
 
+    @pytest.mark.parametrize(
+        "query",
+        [
+            "那如果是我主动辞职呢？",  # 多轮实测漏判：旧指代词表不含"那如果"
+            "工资按8000算，N+1是多少？",  # 条件覆盖型追问，答案依赖上文
+        ],
+    )
+    def test_followup_found_in_multiturn_eval_is_not(self, query):
+        assert not is_self_contained(query)
+
     def test_too_short_is_not(self):
         assert not is_self_contained("试用期多久")
 
@@ -239,7 +249,8 @@ class TestEngineIntegration:
         assert get_event(second, "meta")["cached"] is True
         assert strip_citation_note(all_deltas(second)) == LONG_ANSWER
         assert len(llm.calls) == 1, "命中缓存后不得再调 LLM"
-        assert len(analyze_calls) == 1, "命中缓存后不得再做意图识别"
+        # O1-2：缓存键依赖独立化改写，命中时仍会先做一次意图识别（不生成）
+        assert len(analyze_calls) == 2
 
     def test_replay_keeps_sources(self, monkeypatch, cache):
         plan = make_plan("pure_vector", query=QUESTION)

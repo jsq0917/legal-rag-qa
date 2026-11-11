@@ -123,6 +123,49 @@ class TestSelectedKbIsolation:
         assert "kb_labor" not in plan.route.kb_ids
 
 
+class TestCacheKeyAfterRewrite:
+    """O1-2：缓存查询必须发生在独立化改写之后。"""
+
+    def test_exact_lookup_uses_rewritten_query(self, monkeypatch):
+        _patch_recognize(
+            monkeypatch,
+            FakeIntentClient(
+                _structured_json(
+                    sub_queries=["员工主动辞职是否有经济补偿"], rewrite_type="rewrite"
+                )
+            ),
+        )
+        qa = FakeQARetriever()
+        plan = analyze_query(
+            "那如果是我主动辞职呢？",
+            history=[{"role": "user", "content": "公司裁员怎么补偿？"}],
+            qa_retriever=qa,
+        )
+        exact_calls = [c for c in qa.calls if c["method"] == "lookup_exact"]
+        assert exact_calls, "应查询精确定答缓存"
+        assert exact_calls[0]["query"] == "员工主动辞职是否有经济补偿"
+        assert plan.cache_query == "员工主动辞职是否有经济补偿"
+
+    def test_multi_subquery_with_history_skips_cache(self, monkeypatch):
+        _patch_recognize(
+            monkeypatch,
+            FakeIntentClient(
+                _structured_json(
+                    sub_queries=["经济补偿计算标准", "代通知金规定"],
+                    rewrite_type="decompose",
+                )
+            ),
+        )
+        qa = FakeQARetriever()
+        plan = analyze_query(
+            "那这两种分别怎么算？",
+            history=[{"role": "user", "content": "公司裁员怎么补偿？"}],
+            qa_retriever=qa,
+        )
+        assert plan.cache_query == ""
+        assert not any(c["method"] == "lookup_exact" for c in qa.calls)
+
+
 class TestStructuredFlow:
     def test_pure_structured_never_touches_milvus(self, monkeypatch):
         """验收标准：纯结构化问题不产生 Milvus 调用。"""

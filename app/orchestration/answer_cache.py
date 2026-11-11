@@ -57,7 +57,14 @@ _PRONOUNS: tuple[str, ...] = (
     "这些", "那些", "这样", "那样", "上述", "上面", "前面说", "刚才说",
     "该公司", "该条", "此条", "该案", "此案", "该法", "此法",
     "它", "他们", "她们", "然后", "接着说",
+    # 多轮实测漏判的追问（dev/holdout 回放发现）：
+    # "那如果是我主动辞职呢？" 归一化后不含旧表任何指代词
+    "那如果", "如果我", "那我",
 )
+
+#: 条件覆盖型追问：换了计算口径或追问 N+1，答案依赖上文前提
+#: 例："工资按8000算，N+1是多少？"
+_CONDITION_OVERRIDE_RE = re.compile(r"按\s*\d+\s*[算计]|n\s*[+＋]\s*1", re.IGNORECASE)
 
 #: 自包含问题的最短归一化长度（"工伤"两个字太泛，答案要结合具体情形）
 _MIN_SELF_CONTAINED_CHARS = 8
@@ -85,6 +92,8 @@ def is_self_contained(query: str) -> bool:
     """
     norm = normalize_question(query)
     if len(norm) < _MIN_SELF_CONTAINED_CHARS:
+        return False
+    if _CONDITION_OVERRIDE_RE.search(norm):
         return False
     return not any(p in norm for p in _PRONOUNS)
 

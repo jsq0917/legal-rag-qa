@@ -40,6 +40,9 @@ class QueryPlan:
     route: RouteDecision
     qa: QALookupResult
     sub_queries: list[str] = field(default_factory=list)  # 实际用于检索的查询（改写后）
+    #: 答案缓存键使用的问题：独立化改写后的单问；多子查询且无历史时退回原问题；
+    #: 多子查询且有历史时为空（不缓存）。见 O1-2「先改写再决定缓存键」。
+    cache_query: str = ""
     elapsed_ms: int = 0
 
     @property
@@ -67,6 +70,7 @@ class QueryPlan:
                 "error": self.qa.error,
             },
             "sub_queries": list(self.sub_queries),
+            "cache_query": self.cache_query,
             "degraded": self.degraded,
             "elapsed_ms": self.elapsed_ms,
         }
@@ -118,25 +122,34 @@ def analyze_query(
                 elapsed_ms=elapsed_ms,
             )
 
-    # 0) 缓存前置：先查 Redis 精确缓存（0.1ms 级），命中就直接走 pure_structured，
-    #    跳过 LLM 意图识别（~1s）。高频问题 TTFT 从 ~2s 砍到 ~0.1s。
+    # 0) 先做意图识别 + 独立化改写。缓存键必须基于改写后的问题：
+    #    多轮追问「那如果是我主动辞职呢」原样做键会跨上下文误命中（O1-2）。
+    intent_result = recognize_intent(query, history=history, settings=s)
+    sub_queries = list(intent_result.sub_queries) or ([query] if query else [])
+    if len(sub_queries) == 1:
+        cache_query = sub_queries[0]
+    elif not history:
+        cache_query = query
+    else:
+        cache_query = ""
+
+    # 1) 问答库精确缓存：只对单一独立问题查询；多子查询无法用一条标准答案回放
     qa_retriever = qa_retriever or get_qa_retriever()
-    exact_hit = qa_retriever.lookup_exact(query, scope=scope)
+    exact_hit = (
+        qa_retriever.lookup_exact(sub_queries[0], scope=scope)
+        if len(sub_queries) == 1
+        else None
+    )
     if exact_hit is not None and requested_kb_ids and exact_hit.kb_id and exact_hit.kb_id not in requested_kb_ids:
         # 客户端勾选的库不含该问答所属库：不能跨库回放标准答案
         exact_hit = None
     if exact_hit is not None:
         elapsed_ms = int((time.perf_counter() - started) * 1000)
-        # 构造伪意图结果：标记 source="cache"，不调 LLM
-        intent_result = IntentResult(
-            intent=exact_hit.intent,
-            rewrite_type="direct",
-            sub_queries=[query],
-            complexity="simple",
+        # 保留 LLM 的意图/改写结果，只补上"问答库命中"标记
+        intent_result = replace(
+            intent_result,
             hit_structured=True,
             structured_topic=exact_hit.category or None,
-            law_hints=[],
-            source="cache",
         )
         if exact_hit.kb_id:
             kb_ids = [exact_hit.kb_id]
@@ -149,7 +162,7 @@ def analyze_query(
             kb_ids=kb_ids,
             use_mysql_qa=True,
             use_milvus=False,
-            reason="精确缓存命中：标准答案直接回放，不调 LLM 意图识别",
+            reason="问答库精确命中：标准答案直接回放（已先完成独立化改写）",
         )
         qa_result = QALookupResult(
             hit=exact_hit,
@@ -158,20 +171,18 @@ def analyze_query(
             elapsed_ms=elapsed_ms,
         )
         logger.info(
-            "缓存前置命中 q=%.40s qa_id=%s 跳过意图识别 耗时=%dms",
-            query, exact_hit.id, elapsed_ms,
+            "问答库精确命中 q=%.40s rewritten=%.40s qa_id=%s 耗时=%dms",
+            query, cache_query, exact_hit.id, elapsed_ms,
         )
         return QueryPlan(
             query=query,
             intent=intent_result,
             route=cached_route,
             qa=qa_result,
-            sub_queries=[query],
+            sub_queries=sub_queries,
+            cache_query=cache_query,
             elapsed_ms=elapsed_ms,
         )
-
-    # 1) 意图识别（LLM，失败自动降级规则）
-    intent_result = recognize_intent(query, history=history, settings=s)
 
     # 2) 静态路由：先按"未精确命中"裁决，结构化候选再经问答库确认
     pre_route = route(intent_result, selected_kb_ids=selected_kb_ids, structured_hit=False)
@@ -182,7 +193,7 @@ def analyze_query(
     if pre_route.use_mysql_qa:
         retriever = qa_retriever or get_qa_retriever()
         qa_result = retriever.lookup(
-            query,
+            sub_queries[0] if len(sub_queries) == 1 else query,
             structured_topic=intent_result.structured_topic,
             kb_ids=pre_route.kb_ids,
             scope=scope,
@@ -201,7 +212,6 @@ def analyze_query(
         else:
             final_route = replace(final_route, kb_ids=restricted or list(scope.kb_ids))
 
-    sub_queries = list(intent_result.sub_queries) or ([query] if query else [])
     elapsed_ms = int((time.perf_counter() - started) * 1000)
     logger.info(
         "查询规划完成 q=%.40s intent=%s route=%s(%s→%s) 子查询=%d 条 degraded=%s 耗时=%dms",
@@ -220,5 +230,6 @@ def analyze_query(
         route=final_route,
         qa=qa_result,
         sub_queries=sub_queries,
+        cache_query=cache_query,
         elapsed_ms=elapsed_ms,
     )
