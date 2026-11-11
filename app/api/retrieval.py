@@ -18,7 +18,7 @@ from app.core.metrics import record_permission_denied
 from app.core.ratelimit import rate_limit_dep
 from app.core.security import CurrentUser, get_current_user
 from app.retrieval.service import retrieve
-from app.security.guardrails import safe_source_file
+from app.security.guardrails import redact_sensitive, safe_source_file
 
 router = APIRouter(
     prefix="/api",
@@ -72,8 +72,10 @@ def preview(
                 "title": h.title,
                 "score": round(h.score, 6),
                 "rerank_score": None if h.rerank_score is None else round(h.rerank_score, 4),
-                "content": h.content,
-                "parent_content": h.parent_content,
+                # 预览属于调试窗口，但正文同样可能带密钥/连接串/内部路径，
+                # 与正式问答输出用同一套脱敏口径。
+                "content": redact_sensitive(h.content)[0],
+                "parent_content": redact_sensitive(h.parent_content)[0],
                 # 调试接口也不回传服务器路径/随机前缀，只给 basename
                 "source_file": safe_source_file(h.source_file),
             }

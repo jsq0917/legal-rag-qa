@@ -184,6 +184,52 @@ class TestMaliciousInput:
         assert resp.status_code != 500
 
 
+def test_retrieval_preview_redacts_hit_content(client, monkeypatch):
+    """预览正文与父块正文同样要脱敏，不能成为密钥/内部路径的旁路。"""
+    from types import SimpleNamespace
+
+    import app.api.retrieval as retrieval_api
+
+    hit = SimpleNamespace(
+        chunk_id="c1",
+        kb_id="kb_labor",
+        law_name="中华人民共和国劳动合同法",
+        article_no="第十条",
+        chapter_path="",
+        title="",
+        score=0.9,
+        rerank_score=0.8,
+        content="正文。API Key: sk-abcdef1234567890，路径 C:\\secret\\app\\config.py",
+        parent_content="完整条文 mysql://root:Passw0rd@10.0.0.5:3306/law",
+        source_file=r"C:\data\uploads\kb_labor\劳动合同法.md",
+    )
+    result = SimpleNamespace(
+        question="劳动合同解除",
+        complexity="medium",
+        topk=5,
+        pool=10,
+        mode="hybrid",
+        reranked=True,
+        elapsed_ms=1,
+        debug={},
+        hits=[hit],
+    )
+    monkeypatch.setattr(retrieval_api, "retrieve", lambda *a, **kw: result)
+
+    resp = client.post("/api/retrieval/preview", json={"question": "劳动合同解除"})
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    content = body["hits"][0]["content"]
+    parent = body["hits"][0]["parent_content"]
+    for leaked in ("sk-abcdef1234567890", "C:\\secret", "Passw0rd"):
+        assert leaked not in resp.text, f"预览泄露 {leaked}"
+    assert "[已隐藏:api_key]" in content
+    assert "[已隐藏:internal_path]" in content
+    assert "[已隐藏:db_url]" in parent
+    assert "正文。" in content
+    assert body["hits"][0]["source_file"] == "劳动合同法.md"
+
+
 def test_permission_denied_metric_counts_without_resource_ids(client):
     """越权计数只按资源类型聚合，不写具体 kb_id，便于报告统计。"""
     from app.core.metrics import render_prometheus, reset_metrics
