@@ -121,16 +121,20 @@ function Wait-ForPort {
 }
 
 function Invoke-JsonPost {
-    param([string]$Uri, [object]$Body, [int]$TimeoutSec = 60)
+    param([string]$Uri, [object]$Body, [int]$TimeoutSec = 60, [string]$Token)
     $json = ($Body | ConvertTo-Json -Depth 8 -Compress)
     $bytes = [System.Text.Encoding]::UTF8.GetBytes($json)
+    $headers = @{}
+    if ($Token) { $headers['Authorization'] = "Bearer $Token" }
     return Invoke-RestMethod -Method Post -Uri $Uri -Body $bytes `
-        -ContentType 'application/json; charset=utf-8' -TimeoutSec $TimeoutSec
+        -ContentType 'application/json; charset=utf-8' -TimeoutSec $TimeoutSec -Headers $headers
 }
 
 function Invoke-JsonGet {
-    param([string]$Uri, [int]$TimeoutSec = 60)
-    return Invoke-RestMethod -Method Get -Uri $Uri -TimeoutSec $TimeoutSec
+    param([string]$Uri, [int]$TimeoutSec = 60, [string]$Token)
+    $headers = @{}
+    if ($Token) { $headers['Authorization'] = "Bearer $Token" }
+    return Invoke-RestMethod -Method Get -Uri $Uri -TimeoutSec $TimeoutSec -Headers $headers
 }
 
 # ---------------------------------------------------------------------------
@@ -270,13 +274,20 @@ Write-Step '本地模型（bge-m3 / bge-reranker-v2-m3）'
 if ($SkipModels) {
     Write-Skip '按 -SkipModels 跳过'
 } else {
+    $prevEap = $ErrorActionPreference
+    # uv 会往 stderr 打环境告警（如 SSL_CERT_DIR 无效）；Stop 下 native stderr 会被
+    # 当成终止错误，这里只取退出码，不让告警打断启动。
+    $ErrorActionPreference = 'Continue'
     $check = uv run @runArgs python -m scripts.download_models --check 2>&1 | Out-String
+    $ErrorActionPreference = $prevEap
     if ($LASTEXITCODE -eq 0) {
         Write-Ok '模型已完整，无需下载'
     } else {
         Write-WarnMsg '模型缺失，开始下载（约 4.4GB，hf-mirror 优先，失败自动切 ModelScope）'
         Step-Timer { $env:HF_HUB_DISABLE_XET = '1'; uv run @runArgs python -m scripts.download_models | Out-Host }
+        $ErrorActionPreference = 'Continue'
         $check = uv run @runArgs python -m scripts.download_models --check 2>&1 | Out-String
+        $ErrorActionPreference = $prevEap
         if ($LASTEXITCODE -eq 0) { Write-Ok '模型下载完成' }
         else { Write-Fail '模型仍不完整，可手工下载后放到 models/ 目录'; Pop-Location; exit 1 }
     }
@@ -322,6 +333,20 @@ if ($NoStart) {
     Pop-Location; exit 0
 }
 
+# 强制 JWT 之后 /api/kbs、/api/ingest/local 都需要 Bearer token；脚本化建库没有
+# 交互式登录（登录接口还带验证码），用本地账号签一个 bootstrap token。
+Write-Host '  签发本地 bootstrap token…'
+$ErrorActionPreference = 'Continue'
+$tokenOut = uv run @runArgs python -m scripts.bootstrap_token 2>$null
+$ErrorActionPreference = 'Stop'
+$Token = ($tokenOut | Select-Object -Last 1).Trim()
+if (-not $Token -or $Token.Split('.').Count -ne 3) {
+    Write-Fail '获取 bootstrap token 失败：建库/入库接口需要登录'
+    Write-Host '  可手动执行：uv run python -m scripts.bootstrap_token'
+    Pop-Location; exit 1
+}
+Write-Ok '已获取 bootstrap token'
+
 # ---------------------------------------------------------------------------
 # step 7 建知识库 + 入库
 # ---------------------------------------------------------------------------
@@ -335,17 +360,19 @@ if ($SkipIngest) {
         @{ id = 'kb_civil'; name = '民法典知识库'; desc = '中华人民共和国民法典（7 编 1260 条）' }
     )
     try {
-        $existing = Invoke-JsonGet -Uri "$BaseUrl/api/kbs" -TimeoutSec 20
+        $existing = Invoke-JsonGet -Uri "$BaseUrl/api/kbs" -TimeoutSec 20 -Token $Token
         $existingIds = @($existing | ForEach-Object { $_.id })
     } catch {
-        Write-Fail "获取知识库列表失败：$($_.Exception.Message)"; Pop-Location; exit 1
+        Write-Fail "获取知识库列表失败：$($_.Exception.Message)"
+        Write-Host "  接口需要登录：token 由 scripts/bootstrap_token.py 签发，可用 uv run python -m scripts.bootstrap_token 排查"
+        Pop-Location; exit 1
     }
     foreach ($kb in $kbs) {
         if ($existingIds -contains $kb.id) { Write-Skip "$($kb.id) 已存在"; continue }
         try {
             Invoke-JsonPost -Uri "$BaseUrl/api/kbs" -Body @{
                 id = $kb.id; name = $kb.name; description = $kb.desc
-            } -TimeoutSec 30 | Out-Null
+            } -TimeoutSec 30 -Token $Token | Out-Null
             Write-Ok "已创建 $($kb.id)"
         } catch {
             Write-WarnMsg "创建 $($kb.id) 失败：$($_.Exception.Message)"
@@ -367,7 +394,9 @@ if ($SkipIngest) {
         Write-Host "  入库 $($f.Name) -> $kbId"
         $sw = [System.Diagnostics.Stopwatch]::StartNew()
         try {
-            $r = Invoke-RestMethod -Method Post -Uri $uri -TimeoutSec 3600 -ContentType 'application/json; charset=utf-8'
+            $r = Invoke-RestMethod -Method Post -Uri $uri -TimeoutSec 3600 `
+                -ContentType 'application/json; charset=utf-8' `
+                -Headers @{ Authorization = "Bearer $Token" }
             $sw.Stop()
             Write-Ok ("status={0} 条文={1} 子块={2} ({3:N1}s)" -f $r.status, $r.article_count, $r.child_count, $sw.Elapsed.TotalSeconds)
         } catch {
