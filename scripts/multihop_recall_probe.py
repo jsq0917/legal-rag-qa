@@ -53,7 +53,8 @@ def main() -> int:
     out = Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / "eval/results/multihop_recall_probe.json"
     settings = get_settings()
     cases = {r["id"]: r for r in load_jsonl(ROOT / "eval/qa_test_cases.jsonl")}
-    intent = json.loads((ROOT / "eval/results/intent_pipeline.json").read_text(encoding="utf-8"))
+    intent_path = Path(sys.argv[4]) if len(sys.argv) > 4 else ROOT / "eval/results/intent_pipeline.json"
+    intent = json.loads(intent_path.read_text(encoding="utf-8"))
     ids = [cid for cid, c in cases.items() if c["type"] == (sys.argv[2] if len(sys.argv) > 2 else "multi_hop")]
     embedder = _CachingEmbedder(get_embedder())
     reranker = get_reranker(settings)
@@ -167,7 +168,7 @@ def main() -> int:
         "meta": {
             "generated_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
             "samples": len(ids),
-            "intent_source": "eval/results/intent_pipeline.json",
+            "intent_source": str(intent_path),
             "variants": {
                 "base": "线上口径",
                 "A": "最终 topK + 3",

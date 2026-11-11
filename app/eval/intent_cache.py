@@ -77,12 +77,19 @@ def _install_usage_counter() -> Callable[[], dict[str, int]]:
     return snapshot
 
 
-def fill(batch_size: int, *, refresh: bool = False, usage_path: Path = USAGE_PATH) -> None:
+def fill(
+    batch_size: int,
+    *,
+    refresh: bool = False,
+    usage_path: Path = USAGE_PATH,
+    pipeline_path: Path = PIPELINE_CACHE,
+    hints_path: Path = HINTS_CACHE,
+) -> None:
     from app.orchestration.intent import get_intent_client, recognize_intent
 
     cases = load_cases()
-    pipeline = {} if refresh else _load(PIPELINE_CACHE)
-    hints = {} if refresh else _load(HINTS_CACHE)
+    pipeline = {} if refresh else _load(pipeline_path)
+    hints = {} if refresh else _load(hints_path)
     missing = [c for c in cases if c["id"] not in pipeline]
     if not missing:
         print("意图缓存已覆盖全部样本，无需补齐（--refresh 可整体重算）")
@@ -143,8 +150,8 @@ def fill(batch_size: int, *, refresh: bool = False, usage_path: Path = USAGE_PAT
                 "fallback_ids": batch_failures,
             }
         )
-        _save(PIPELINE_CACHE, pipeline)
-        _save(HINTS_CACHE, hints)
+        _save(pipeline_path, pipeline)
+        _save(hints_path, hints)
         print(
             f"[批 {offset // batch_size + 1}] {len(batch)} 条，LLM {calls} 次，"
             f"prompt {prompt} / completion {completion} tokens，"
@@ -189,8 +196,20 @@ def main() -> None:
     parser.add_argument(
         "--usage-out", type=Path, default=USAGE_PATH, help="用量明细输出路径"
     )
+    parser.add_argument(
+        "--pipeline-out", type=Path, default=PIPELINE_CACHE, help="意图流水线缓存输出路径"
+    )
+    parser.add_argument(
+        "--hints-out", type=Path, default=HINTS_CACHE, help="法域 hint 缓存输出路径"
+    )
     args = parser.parse_args()
-    fill(max(1, args.batch_size), refresh=args.refresh, usage_path=args.usage_out)
+    fill(
+        max(1, args.batch_size),
+        refresh=args.refresh,
+        usage_path=args.usage_out,
+        pipeline_path=args.pipeline_out,
+        hints_path=args.hints_out,
+    )
 
 
 if __name__ == "__main__":
