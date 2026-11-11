@@ -1,0 +1,16 @@
+{
+  "note": "生成侧 token 来自 SSE done 事件；单价为假设价，实际以百炼账单为准",
+  "samples": 3,
+  "prompt_tokens": 4144,
+  "completion_tokens": 1711,
+  "cost_cny_estimate": 0.021976,
+  "batches": [
+    {
+      "batch": 1,
+      "samples": 3,
+      "prompt_tokens": 4144,
+      "completion_tokens": 1711,
+      "cost_cny_estimate": 0.021976
+    }
+  ]
+}
