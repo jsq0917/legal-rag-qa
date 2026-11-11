@@ -138,16 +138,28 @@ class AccessScope:
         return self.allows_kb(kb_id)
 
     def can_write(self, kb_id: str | None) -> bool:
-        """写权限：管理员 / 同租户编辑；只读用户与匿名一律拒绝。"""
+        """写权限：**同租户**管理员 / 编辑；只读用户、匿名、跨租户一律拒绝。
+
+        边界（与任务书「公共库所有租户可读、不可写」一致）：
+        * 公共库对**非所属租户**只读，跨租户 admin 也不能写；
+        * 私有库归 ``owner_id``：同租户 editor 只能写本人私有库或公共库，
+          他人私有库需同租户 admin；
+        * ``owner_id`` 为空的历史库按"租户公共资产"处理，同租户 editor 可写。
+        """
         if self.legacy:
             return True
         grant = self.grant(kb_id or "")
         if grant is None:
             return False
+        # 写操作只能发生在知识库所属租户内（公共库跨租户只读）
+        if grant.tenant_id != self.tenant_id:
+            return False
         if self.role == ROLE_ADMIN:
-            return grant.tenant_id == self.tenant_id or grant.is_public
+            return True
         if self.role == ROLE_EDITOR:
-            return grant.tenant_id == self.tenant_id
+            if not grant.is_public and grant.owner_id not in (None, self.user_id):
+                return False
+            return True
         return False
 
     # ------------------------------------------------------------------
@@ -216,19 +228,14 @@ def resolve_access_scope(
             )
         ).mappings().all()
     except Exception:
-        # 旧库或测试替身没有新列时，退回最小列集；此时全部按公共库处理，
-        # 等迁移执行后会走上面的完整查询。
-        try:
-            rows = db.execute(
-                text("SELECT id, corpus_version, index_version FROM knowledge_bases ORDER BY id")
-            ).mappings().all()
-        except Exception:
-            rows = []
+        # 缺列 / 查询失败时**不能**默认按公共库放开：授权失败必须 fail-closed，
+        # 返回空范围由调用方走无数据分支，而不是把全部知识库暴露出去。
+        rows = []
 
     grants: list[KbGrant] = []
     for row in rows:
         data = dict(row)
-        is_public = bool(data.get("is_public", 1))
+        is_public = bool(data.get("is_public", 0))
         kb_tenant = data.get("tenant_id") or DEFAULT_TENANT
         # 匿名用户只能看公共库；私库必须同租户（且已登录）。
         if not is_public and (user is None or kb_tenant != tenant_id):

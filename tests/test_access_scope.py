@@ -147,6 +147,49 @@ class TestScopeMath:
         assert not other_public.can_write("kb_labor")
         assert not editor.can_write("kb_civil")
 
+    def test_public_kb_is_read_only_for_other_tenants_even_admin(self):
+        """公共库所有租户可读、不可写：跨租户 admin 也不能写。"""
+        admin_b = AccessScope.for_grants(
+            [KbGrant(kb_id="kb_labor", is_public=True, tenant_id="tenant-a")],
+            tenant_id="tenant-b",
+            user_id=2,
+            role="admin",
+        )
+        assert admin_b.can_read("kb_labor")
+        assert not admin_b.can_write("kb_labor")
+
+    def test_editor_cannot_write_others_private_kb(self):
+        """私有库归 owner：同租户 editor 只能写本人私有库，管理员例外。"""
+        grant = KbGrant(kb_id="kb_priv", is_public=False, tenant_id="default", owner_id=99)
+        other_editor = AccessScope.for_grants(
+            [grant], tenant_id="default", user_id=1, role="editor"
+        )
+        owner_editor = AccessScope.for_grants(
+            [grant], tenant_id="default", user_id=99, role="editor"
+        )
+        tenant_admin = AccessScope.for_grants(
+            [grant], tenant_id="default", user_id=1, role="admin"
+        )
+        assert not other_editor.can_write("kb_priv")
+        assert owner_editor.can_write("kb_priv")
+        assert tenant_admin.can_write("kb_priv")
+
+    def test_scope_resolution_fails_closed_when_columns_missing(self):
+        """缺列/查询失败时不能默认按公共库放开，应返回空范围。"""
+
+        class _Boom:
+            def execute(self, *a, **kw):
+                raise RuntimeError("Unknown column 'is_public'")
+
+        class _User:
+            id = 1
+            tenant_id = "default"
+            role = "admin"
+
+        scope = resolve_access_scope(_Boom(), _User(), ["kb_labor"])
+        assert scope.kb_ids == ()
+        assert scope.restrict(None) == []
+
 
 class TestAnswerCacheIsolation:
     def test_same_query_different_scope_never_replays(self, settings_factory):
