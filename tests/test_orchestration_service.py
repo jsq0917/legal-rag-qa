@@ -54,14 +54,22 @@ def _structured_json(**overrides) -> str:
 class FakeQARetriever:
     """记录调用并返回预设结果。"""
 
-    def __init__(self, result: QALookupResult | None = None) -> None:
+    def __init__(
+        self,
+        result: QALookupResult | None = None,
+        *,
+        exact_hits: dict[str, QAPair] | None = None,
+    ) -> None:
         self.result = result or QALookupResult()
         self.calls: list[dict] = []
         self.exact_hit: QAPair | None = None  # 缓存前置命中时返回
+        self.exact_hits = exact_hits  # 按问题精确匹配（区分原始问法与改写问法）
 
     def lookup_exact(self, query, *, scope=None):
-        """缓存前置：默认不命中，测试可预设 exact_hit。"""
+        """缓存前置：默认不命中，测试可预设 exact_hit / exact_hits。"""
         self.calls.append({"method": "lookup_exact", "query": query})
+        if self.exact_hits is not None:
+            return self.exact_hits.get(query)
         return self.exact_hit
 
     def lookup(self, query, *, structured_topic=None, kb_ids=None, scope=None):
@@ -124,9 +132,38 @@ class TestSelectedKbIsolation:
 
 
 class TestCacheKeyAfterRewrite:
-    """O1-2：缓存查询必须发生在独立化改写之后。"""
+    """O1-2：回答缓存键取改写后的问题；问答库精确查找仍以原始问法优先。"""
 
-    def test_exact_lookup_uses_rewritten_query(self, monkeypatch):
+    def test_raw_query_hits_before_rewrite(self, monkeypatch):
+        """标准问法不能被改写打穿：原始问法命中即回放，不再用改写问法查。"""
+        _patch_recognize(
+            monkeypatch,
+            FakeIntentClient(
+                _structured_json(
+                    sub_queries=["劳动合同法对试用期最长期限的规定"], rewrite_type="rewrite"
+                )
+            ),
+        )
+        qa = FakeQARetriever(
+            exact_hits={
+                "试用期最长可以约定多久？": QAPair(
+                    id=7, category="试用期", question_std="试用期最长可以约定多久？", answer="六个月"
+                )
+            }
+        )
+        plan = analyze_query(
+            "试用期最长可以约定多久？",
+            history=[{"role": "user", "content": "劳动合同怎么签？"}],
+            qa_retriever=qa,
+        )
+        exact_calls = [c["query"] for c in qa.calls if c["method"] == "lookup_exact"]
+        assert exact_calls == ["试用期最长可以约定多久？"]
+        assert plan.route.route == "pure_structured"
+        assert plan.intent.source == "cache"
+        assert plan.qa.hit is not None and plan.qa.hit.id == 7
+
+    def test_followup_falls_back_to_rewritten_query(self, monkeypatch):
+        """追问原样查不到 → 用独立化改写后的单问再精确查一次。"""
         _patch_recognize(
             monkeypatch,
             FakeIntentClient(
@@ -135,15 +172,25 @@ class TestCacheKeyAfterRewrite:
                 )
             ),
         )
-        qa = FakeQARetriever()
+        qa = FakeQARetriever(
+            exact_hits={
+                "员工主动辞职是否有经济补偿": QAPair(
+                    id=9,
+                    category="经济补偿",
+                    question_std="员工主动辞职是否有经济补偿",
+                    answer="主动辞职一般无经济补偿",
+                )
+            }
+        )
         plan = analyze_query(
             "那如果是我主动辞职呢？",
             history=[{"role": "user", "content": "公司裁员怎么补偿？"}],
             qa_retriever=qa,
         )
-        exact_calls = [c for c in qa.calls if c["method"] == "lookup_exact"]
-        assert exact_calls, "应查询精确定答缓存"
-        assert exact_calls[0]["query"] == "员工主动辞职是否有经济补偿"
+        exact_calls = [c["query"] for c in qa.calls if c["method"] == "lookup_exact"]
+        assert exact_calls == ["那如果是我主动辞职呢？", "员工主动辞职是否有经济补偿"]
+        assert plan.route.route == "pure_structured"
+        assert plan.qa.hit is not None and plan.qa.hit.id == 9
         assert plan.cache_query == "员工主动辞职是否有经济补偿"
 
     def test_multi_subquery_with_history_skips_cache(self, monkeypatch):
@@ -163,7 +210,9 @@ class TestCacheKeyAfterRewrite:
             qa_retriever=qa,
         )
         assert plan.cache_query == ""
-        assert not any(c["method"] == "lookup_exact" for c in qa.calls)
+        # 原始问法仍会做一次精确查找（0.1ms 级）；多子查询不做改写后的精确回放
+        exact_calls = [c["query"] for c in qa.calls if c["method"] == "lookup_exact"]
+        assert exact_calls == ["那这两种分别怎么算？"]
 
 
 class TestStructuredFlow:

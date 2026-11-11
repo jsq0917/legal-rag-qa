@@ -122,34 +122,28 @@ def analyze_query(
                 elapsed_ms=elapsed_ms,
             )
 
-    # 0) 先做意图识别 + 独立化改写。缓存键必须基于改写后的问题：
-    #    多轮追问「那如果是我主动辞职呢」原样做键会跨上下文误命中（O1-2）。
-    intent_result = recognize_intent(query, history=history, settings=s)
-    sub_queries = list(intent_result.sub_queries) or ([query] if query else [])
-    if len(sub_queries) == 1:
-        cache_query = sub_queries[0]
-    elif not history:
-        cache_query = query
-    else:
-        cache_query = ""
-
-    # 1) 问答库精确缓存：只对单一独立问题查询；多子查询无法用一条标准答案回放
+    # 0) 问答库精确缓存：**原始问法优先**，命中即回放，跳过 LLM 意图识别。
+    #    问答库存的是规范问法，若先改写再查，改写会破坏精确匹配
+    #    （「试用期最长可以约定多久？」→「劳动合同法对试用期最长期限的规定」），
+    #    标准问法就不再走 pure_structured。回答级缓存的键仍取改写后的 cache_query，
+    #    两者互不影响（见下面第 1 步与 O1-2）。
     qa_retriever = qa_retriever or get_qa_retriever()
-    exact_hit = (
-        qa_retriever.lookup_exact(sub_queries[0], scope=scope)
-        if len(sub_queries) == 1
-        else None
-    )
+    exact_hit = qa_retriever.lookup_exact(query, scope=scope)
     if exact_hit is not None and requested_kb_ids and exact_hit.kb_id and exact_hit.kb_id not in requested_kb_ids:
         # 客户端勾选的库不含该问答所属库：不能跨库回放标准答案
         exact_hit = None
     if exact_hit is not None:
         elapsed_ms = int((time.perf_counter() - started) * 1000)
-        # 保留 LLM 的意图/改写结果，只补上"问答库命中"标记
-        intent_result = replace(
-            intent_result,
+        # 构造伪意图结果：标记 source="cache"，不调 LLM
+        intent_result = IntentResult(
+            intent=exact_hit.intent,
+            rewrite_type="direct",
+            sub_queries=[query],
+            complexity="simple",
             hit_structured=True,
             structured_topic=exact_hit.category or None,
+            law_hints=[],
+            source="cache",
         )
         if exact_hit.kb_id:
             kb_ids = [exact_hit.kb_id]
@@ -162,7 +156,7 @@ def analyze_query(
             kb_ids=kb_ids,
             use_mysql_qa=True,
             use_milvus=False,
-            reason="问答库精确命中：标准答案直接回放（已先完成独立化改写）",
+            reason="问答库精确命中：标准答案直接回放，不调 LLM 意图识别",
         )
         qa_result = QALookupResult(
             hit=exact_hit,
@@ -171,18 +165,74 @@ def analyze_query(
             elapsed_ms=elapsed_ms,
         )
         logger.info(
-            "问答库精确命中 q=%.40s rewritten=%.40s qa_id=%s 耗时=%dms",
-            query, cache_query, exact_hit.id, elapsed_ms,
+            "问答库精确命中 q=%.40s qa_id=%s 跳过意图识别 耗时=%dms",
+            query, exact_hit.id, elapsed_ms,
         )
         return QueryPlan(
             query=query,
             intent=intent_result,
             route=cached_route,
             qa=qa_result,
-            sub_queries=sub_queries,
-            cache_query=cache_query,
+            sub_queries=[query],
             elapsed_ms=elapsed_ms,
         )
+
+    # 1) 意图识别 + 独立化改写。答案缓存的键必须基于改写后的问题：
+    #    多轮追问「那如果是我主动辞职呢」原样做键会跨上下文误命中（O1-2）。
+    intent_result = recognize_intent(query, history=history, settings=s)
+    sub_queries = list(intent_result.sub_queries) or ([query] if query else [])
+    if len(sub_queries) == 1:
+        cache_query = sub_queries[0]
+    elif not history:
+        cache_query = query
+    else:
+        cache_query = ""
+
+    # 1.5) 追问补偿：带历史的问法本身不成句，原始问法查不到时再用独立化改写
+    #      后的单问精确查一次（原始问法优先，见第 0 步）。多子查询无法用一条
+    #      标准答案回放，跳过。
+    if history and len(sub_queries) == 1 and sub_queries[0] != query:
+        rewritten_hit = qa_retriever.lookup_exact(sub_queries[0], scope=scope)
+        if rewritten_hit is not None and requested_kb_ids and rewritten_hit.kb_id and rewritten_hit.kb_id not in requested_kb_ids:
+            rewritten_hit = None
+        if rewritten_hit is not None:
+            exact_hit = rewritten_hit
+            elapsed_ms = int((time.perf_counter() - started) * 1000)
+            intent_result = replace(
+                intent_result,
+                hit_structured=True,
+                structured_topic=exact_hit.category or None,
+            )
+            if exact_hit.kb_id:
+                kb_ids = [exact_hit.kb_id]
+            elif scope is not None and scope.has_grants:
+                kb_ids = list(scope.kb_ids)
+            else:
+                kb_ids = list(ALL_KB_IDS)
+            logger.info(
+                "问答库精确命中(改写后) q=%.40s rewritten=%.40s qa_id=%s 耗时=%dms",
+                query, sub_queries[0], exact_hit.id, elapsed_ms,
+            )
+            return QueryPlan(
+                query=query,
+                intent=intent_result,
+                route=RouteDecision(
+                    route="pure_structured",
+                    kb_ids=kb_ids,
+                    use_mysql_qa=True,
+                    use_milvus=False,
+                    reason="问答库精确命中：标准答案直接回放（追问经独立化改写后命中）",
+                ),
+                qa=QALookupResult(
+                    hit=exact_hit,
+                    source="redis_exact",
+                    similarity=1.0,
+                    elapsed_ms=elapsed_ms,
+                ),
+                sub_queries=sub_queries,
+                cache_query=cache_query,
+                elapsed_ms=elapsed_ms,
+            )
 
     # 2) 静态路由：先按"未精确命中"裁决，结构化候选再经问答库确认
     pre_route = route(intent_result, selected_kb_ids=selected_kb_ids, structured_hit=False)
@@ -192,8 +242,11 @@ def analyze_query(
     final_route = pre_route
     if pre_route.use_mysql_qa:
         retriever = qa_retriever or get_qa_retriever()
+        # 单轮问题用原始问法查（改写会打穿标准问法的 BM25/余弦匹配）；
+        # 只有带历史的追问才用独立化改写后的单问，避免跨上下文命中。
+        qa_query = sub_queries[0] if history and len(sub_queries) == 1 else query
         qa_result = retriever.lookup(
-            sub_queries[0] if len(sub_queries) == 1 else query,
+            qa_query,
             structured_topic=intent_result.structured_topic,
             kb_ids=pre_route.kb_ids,
             scope=scope,
