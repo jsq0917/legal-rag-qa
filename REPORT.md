@@ -390,7 +390,7 @@ uv run python -m app.eval.loadtest --levels 1 5 10 20
 | 注入攻击明确拒答率 | — | holdout **36/36**（95%CI 0.904–1.000）；live holdout 48 条 23/36（95%CI 0.476–0.775） | fixture + live | 同上 |
 | 正常法律问题误拒 | — | holdout 0/12（95%CI 0–0.243）；live holdout 48 条 0/12（95%CI 0–0.242） | fixture + live | 同上 |
 | 敏感信息泄漏 | — | 0 条（攻击回答快照 + live 回答均未检出密钥/路径/系统 Prompt） | fixture + live | 同上 |
-| 同一问题冷/热缓存 | 冷请求 3.649 s（CPU，含意图+检索+生成）；热请求 0.051 s | 命中后跳过生成，快 **71.55×**；热请求 token=0 | live | `cache_hot_cold.json`（2026-11-11，`EMBEDDING_DEVICE=cpu`） |
+| 同一问题冷/热缓存 | 冷请求 3.326 s（CPU，含意图+检索+生成）；热请求 0.048 s | 命中后跳过生成，快 **96.55×**；热请求 token=0 | live | `cache_hot_cold.json`（2026-11-11，`meta.command` 为 PowerShell 语法） |
 | 转人工/降级率 | 30/120 = **25.0%** | 未复测 | live 采集 | `qa_answers.jsonl`（文件最后写入 2026-11-10 23:38；并行评估会话生成，本报告只读） |
 | 答案缓存命中率 | 0/120 = **0.0%** | 未复测 | live 采集 | 同上 |
 | 越权拒绝计数 | — | 离线触发 3 次，Prometheus 计数 3 次 | offline | `test_security_boundary.py::test_permission_denied_metric_counts_without_resource_ids` |
@@ -517,7 +517,6 @@ uv run python scripts/verify_multiturn_cache.py --out eval/results/multiturn_cac
 uv run python -m app.eval.injection_eval --out eval/results/injection_fixture.json
 uv run python -m app.eval.injection_eval --mode fixture --split holdout --out eval/results/injection_fixture_holdout_v2.json
 uv run python -m app.eval.injection_eval --mode live --split holdout --max-cases 48 --out eval/results/injection_live_holdout_v2.json
-uv run python -m app.eval.injection_eval --mode live --split dev --max-cases 8 --out eval/results/injection_live_dev.json
 
 # 冷/热缓存（真实 LLM + Redis；只删本次探针问题的 key，不清库）
 $env:EMBEDDING_DEVICE='cpu'
@@ -532,12 +531,14 @@ uv run python -m pytest -q -m integration tests/test_security_integration.py tes
 # VALUES ('kb_generic','产品说明书知识库（演示）','Nova 便携净化器说明书（合成数据）','bge-m3','tnt_generic_demo',0,1,1);
 $env:EMBEDDING_DEVICE='cpu'
 uv run python -m app.ingest.pipeline --kb kb_generic --path data/generic/nova_purifier_manual.md
+uv run python scripts/verify_generic_qa.py --kb kb_generic --query "滤芯指示灯变成红色常亮，应该怎么处理？" --out eval/results/generic_qa_live.json
 ```
 
 N1/N2 产物均为 JSON，`meta` 内含 `mode / data_kind / prompt_version / dataset_version / dataset_sha256 /
 generated_at / command`；`injection_fixture_holdout_v2.json`、`injection_live_holdout_v2.json` 额外记录
 `split`，指标项带 Wilson `ci95`。
-N3 产物 `generic_qa_live.json` 记录模型、Prompt、路由、MySQL/Milvus 计数、命中列表、原始回答与
-`meta.command`（旧 `n3_generic_live.json` 缺 command，保留为历史产物，不再引用其数字）。
-冷/热缓存产物 `cache_hot_cold.json` 记录 `meta.command`、冷/暖两段耗时、token 与成本，
+N3 产物 `generic_qa_live.json` 的定位信息统一放在 `meta`（`generated_at / kind / command / kb_id /
+query / embedding_device`），正文记录路由、MySQL/Milvus 计数、命中列表与原始回答；`command` 为
+PowerShell 可直接执行的完整命令（旧 `n3_generic_live.json` 缺 command，保留为历史产物，不再引用其数字）。
+冷/热缓存产物 `cache_hot_cold.json` 同样记录 PowerShell 形式的 `meta.command`、冷/暖两段耗时、token 与成本，
 冷请求前只对本探针问题的缓存 key 做失效，不清空 Redis。

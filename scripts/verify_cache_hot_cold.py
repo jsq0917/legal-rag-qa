@@ -9,7 +9,7 @@
 
 运行::
 
-    EMBEDDING_DEVICE=cpu uv run python scripts/verify_cache_hot_cold.py
+    $env:EMBEDDING_DEVICE='cpu'; uv run python scripts/verify_cache_hot_cold.py
 
 产物：``eval/results/cache_hot_cold.json``（含 ``meta.command`` 与冷/暖两段耗时、
 token、成本、回放字符数）。
@@ -43,7 +43,8 @@ DEFAULT_OUT = ROOT / "eval" / "results" / "cache_hot_cold.json"
 
 
 def _command() -> str:
-    return "EMBEDDING_DEVICE=cpu uv run python scripts/verify_cache_hot_cold.py"
+    # PowerShell 语法，可直接复制执行
+    return "$env:EMBEDDING_DEVICE='cpu'; uv run python scripts/verify_cache_hot_cold.py"
 
 
 def _parse(frame: str) -> tuple[str, dict]:

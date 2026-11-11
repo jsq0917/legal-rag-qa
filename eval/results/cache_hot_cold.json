@@ -2,14 +2,14 @@
   "meta": {
     "mode": "live",
     "data_kind": "cache_hot_cold_probe",
-    "generated_at": "2026-11-11T02:36:18+00:00",
-    "command": "EMBEDDING_DEVICE=cpu uv run python scripts/verify_cache_hot_cold.py",
+    "generated_at": "2026-11-11T03:20:02+00:00",
+    "command": "$env:EMBEDDING_DEVICE='cpu'; uv run python scripts/verify_cache_hot_cold.py",
     "model": "deepseek-v4.1-flash",
     "embedding_device": "cpu",
     "kb_id": "kb_labor",
-    "query": "劳动合同试用期最长不得超过多久？（验收编号 3e5f69be）",
+    "query": "劳动合同试用期最长不得超过多久？（验收编号 4ceab1b0）",
     "cache_namespace": "qa:exact",
-    "model_warmup_ms": 26554,
+    "model_warmup_ms": 23983,
     "cache_key_invalidated": true,
     "note": "冷请求在本地向量/重排模型预热后采样，不含首次加载权重耗时"
   },
@@ -17,26 +17,26 @@
     "cached": false,
     "cache_hit": false,
     "cache_eligible": true,
-    "ttft_ms": 2185,
-    "latency_ms": 3646,
-    "total_ms": 3649,
-    "chars": 540,
+    "ttft_ms": 3326,
+    "latency_ms": 4727,
+    "total_ms": 4731,
+    "chars": 515,
     "token_usage": {
       "prompt_tokens": 1179,
-      "completion_tokens": 264,
-      "total_tokens": 1443
+      "completion_tokens": 249,
+      "total_tokens": 1428
     },
     "cost": {
       "currency": "CNY",
       "prompt_tokens": 1179,
-      "completion_tokens": 264,
+      "completion_tokens": 249,
       "prompt": 0.002358,
-      "completion": 0.002112,
-      "total": 0.00447
+      "completion": 0.001992,
+      "total": 0.00435
     },
     "error": "",
     "events": {
-      "delta": 78,
+      "delta": 73,
       "replayed": false
     }
   },
@@ -44,10 +44,10 @@
     "cached": true,
     "cache_hit": true,
     "cache_eligible": true,
-    "ttft_ms": 49,
-    "latency_ms": 49,
-    "total_ms": 51,
-    "chars": 540,
+    "ttft_ms": 48,
+    "latency_ms": 48,
+    "total_ms": 49,
+    "chars": 515,
     "token_usage": {},
     "cost": null,
     "error": "",
@@ -59,8 +59,8 @@
   "cache": {
     "cold_miss": true,
     "warm_hit": true,
-    "latency_delta_ms": -3598,
-    "speedup": 71.55,
+    "latency_delta_ms": -4682,
+    "speedup": 96.55,
     "warm_skips_generation": true
   }
 }

@@ -3,18 +3,20 @@
 用途：验证 N3 产品资料链路在修复「只保留 kind=law 来源」后是否可用——
 检索结果能进 Prompt、模型能引用《手册》·章节、SSE 来源不被去重吞掉。
 
-运行（GPU 不可用时强制 CPU，避免 bge-m3 CUDA illegal instruction）：
+运行（GPU 不可用时强制 CPU，避免 bge-m3 CUDA illegal instruction；命令为 PowerShell 语法）：
 
-    EMBEDDING_DEVICE=cpu uv run python scripts/verify_generic_qa.py \
-        --kb kb_generic --query "滤芯指示灯变成红色常亮，应该怎么处理？"
+    $env:EMBEDDING_DEVICE='cpu'; uv run python scripts/verify_generic_qa.py `
+        --kb kb_generic --query "滤芯指示灯变成红色常亮，应该怎么处理？" `
+        --out eval/results/generic_qa_live.json
 
-产物：``eval/results/generic_qa_live.json``（含 command 与真实条数/回答）。
+产物：``eval/results/generic_qa_live.json``（``meta`` 内含 command 与真实条数/回答）。
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -88,9 +90,10 @@ def main() -> int:
     args = parser.parse_args()
 
     settings = get_settings()
+    # 产物里的命令必须能直接复制到 PowerShell 里执行
     command = (
-        "EMBEDDING_DEVICE=cpu uv run python scripts/verify_generic_qa.py "
-        f'--kb {args.kb} --query "{args.query}"'
+        "$env:EMBEDDING_DEVICE='cpu'; uv run python scripts/verify_generic_qa.py "
+        f'--kb {args.kb} --query "{args.query}" --out {args.out}'
     )
 
     mysql = _mysql_counts(args.kb, settings)
@@ -121,10 +124,14 @@ def main() -> int:
     refs = aggregate_sources(hits=retrieved.hits)
     cited = [c.title for c in used_sources if c.chapter_path and c.chapter_path in answer]
     payload = {
-        "command": command,
-        "generated_at": datetime.now(timezone.utc).isoformat(),
-        "kb_id": args.kb,
-        "query": args.query,
+        "meta": {
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "kind": "generic_qa_live_probe",
+            "command": command,
+            "kb_id": args.kb,
+            "query": args.query,
+            "embedding_device": os.environ.get("EMBEDDING_DEVICE", ""),
+        },
         "mysql": mysql,
         "milvus": {"entities": milvus_entities},
         "route": plan.route.route,
