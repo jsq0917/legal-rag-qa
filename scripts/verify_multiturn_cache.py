@@ -20,16 +20,26 @@ B 新会话：同一句追问，无历史（是否命中 A 写下的答案）
 C 不同上下文：年假问题 → 同一句追问（改写若丢掉上下文就会命中 A 的答案）
 D 阳性对照：同一会话内原样重复同一问题（必须命中，证明探针能观测到命中）
 
-两条追问用例都必须通过 ``verdict.ok``：
+判定口径分两层：``verdict.ok`` 只由确定性断言决定，模型波动不改变判定
+--------------------------------------------------------------------------
 
-* **原句**「那如果是我主动辞职呢？」：意图层会把它拆成多个子查询，有历史时按设计
-  不生成缓存键（不读不写）。此情形**不删除、不替换**，而是显式断言
-  "确实被拆解（sub_queries > 1）且 A/B/C 均无缓存命中"；若某次真产生了缓存键，
-  则退化为可缓存用例，按误命中口径判定。
-* **单点追问**「那主动辞职有没有经济补偿？」：必须产生可缓存键，并验证新会话/不同
-  上下文不误命中。
+**确定性断言（参与 ``ok``）**：
 
-两条用例分开清理缓存条目，避免互相污染。
+* ``followup_text_not_replaced``：落到检索的追问文本与原句完全一致（改写只影响
+  缓存键/子查询，不得替换用户原话）；
+* ``positive_control_hit``：阳性对照在同一会话内原样重复必须命中；
+* ``no_hit_without_cache_key``：A/B/C 中任何一轮没有缓存键（``cache_query`` 为空，
+  多子查询且有历史时按设计不生成）就不该读缓存，读了即 bug；
+* ``no_false_hit_new_session`` / ``no_false_hit_other_context``：有缓存键但改写后
+  问法不一致时不得跨上下文命中（命中即答非所问）。
+
+**LLM 依赖的观察项（只输出，不参与 ``ok``）**：本次被拆成几个子查询、
+``cache_query`` 是否有值、改写是否稳定（新会话/不同上下文的缓存键是否与 A 一致）、
+不同上下文下主题是否保留。这些随模型波动，如实记录但不用于判定通过与否。
+
+两条追问用例（原句「那如果是我主动辞职呢？」预期不可缓存、单点追问
+「那主动辞职有没有经济补偿？」预期可缓存）走同一套确定性断言，分开清理缓存条目，
+避免互相污染。
 
 用法::
 
@@ -228,68 +238,67 @@ def _variant_verdict(
     *,
     positive_control: bool,
 ) -> dict:
-    """单条追问用例的判定：可缓存走误命中口径，不可缓存走"拆解且零命中"口径。"""
+    """单条追问用例的判定：``ok`` 只看确定性断言，LLM 依赖项归入 ``observations``。"""
     a_follow = results["A_multi_turn"]["turns"][-1]
     b_follow = results["B_new_session"]["turns"][-1]
     c_follow = results["C_other_context"]["turns"][-1]
 
-    cacheable = bool(a_follow["cache_query"])
+    key_a = a_follow["cache_query"]
+    cacheable = bool(key_a)
     mode = "cacheable_single_query" if cacheable else "uncacheable_multi_subquery"
-    same_rewrite_b = _same_cache_query(a_follow["cache_query"], b_follow["cache_query"])
-    same_rewrite_c = _same_cache_query(a_follow["cache_query"], c_follow["cache_query"])
+    same_rewrite_b = _same_cache_query(key_a, b_follow["cache_query"])
+    same_rewrite_c = _same_cache_query(key_a, c_follow["cache_query"])
     # 命中只允许发生在"改写后的独立问法一致"时；否则就是跨上下文回放
     false_hit_b = b_follow["cache"]["hit"] and same_rewrite_b is False
     false_hit_c = c_follow["cache"]["hit"] and same_rewrite_c is False
-    # 年假上下文下改写若仍在问"经济补偿"，说明上下文被丢弃，命中即为答非所问
-    context_lost_c = c_follow["cache"]["hit"] and "年假" not in c_follow["cache_query"]
-    a_false_hit = a_follow["cache"]["hit"]
     hits = {
         "a_multi_turn": a_follow["cache"]["hit"],
         "b_new_session": b_follow["cache"]["hit"],
         "c_other_context": c_follow["cache"]["hit"],
     }
 
-    if cacheable:
-        criteria = {
-            "positive_control_hit": positive_control,
-            "a_followup_cacheable": True,
-            "a_followup_not_hit": not a_false_hit,
-            "no_false_hit_b": not false_hit_b,
-            "no_false_hit_c": not false_hit_c,
-            "context_kept_c": not context_lost_c,
-        }
-        ok = all(criteria.values())
-    else:
-        # 原句情形：不产生缓存键是设计行为，但必须证明"确实拆成多子查询"，
-        # 且三个场景都没有命中任何缓存（无键就不该读，读了就是 bug）。
-        criteria = {
-            "positive_control_hit": positive_control,
-            "decomposed_into_multi_subquery": a_follow["sub_queries"] > 1,
-            "no_cache_hit_a": not hits["a_multi_turn"],
-            "no_cache_hit_b": not hits["b_new_session"],
-            "no_cache_hit_c": not hits["c_other_context"],
-        }
-        ok = all(criteria.values())
+    # 确定性断言：与模型输出是否波动无关，任何一条不通过都是真实缺陷。
+    criteria = {
+        # 改写只影响缓存键/子查询，落到检索的必须是用户原话
+        "followup_text_not_replaced": a_follow["query"] == spec["text"],
+        "positive_control_hit": positive_control,
+        # 没有缓存键就不该读缓存（多子查询且有历史时不生成键是设计行为）
+        "no_hit_without_cache_key": all(
+            not row["cache"]["hit"]
+            for row in (a_follow, b_follow, c_follow)
+            if not row["cache_query"]
+        ),
+        "no_false_hit_new_session": not false_hit_b,
+        "no_false_hit_other_context": not false_hit_c,
+    }
+
+    # LLM 依赖的观察项：如实输出，不参与 ok（避免模型波动导致忽绿忽红）。
+    observations = {
+        "mode": mode,
+        "mode_matches_expect": mode == spec["expect"],
+        "a_cache_query": key_a,
+        "a_cacheable": cacheable,
+        "a_sub_queries": a_follow["sub_queries"],
+        "a_rewrite_type": a_follow["rewrite_type"],
+        "b_sub_queries": b_follow["sub_queries"],
+        "c_sub_queries": c_follow["sub_queries"],
+        "same_cache_query_new_session": same_rewrite_b,
+        "same_cache_query_other_context": same_rewrite_c,
+        # 年假上下文下改写若不再出现"年假"，说明上下文被丢弃（观察项）
+        "other_context_kept_topic": not (
+            c_follow["cache"]["hit"] and "年假" not in c_follow["cache_query"]
+        ),
+        "hits": hits,
+    }
 
     return {
         "id": spec["id"],
         "follow_up": spec["text"],
         "expected_mode": spec["expect"],
-        "mode": mode,
-        "a_followup_cache_key": a_follow["cache_query"],
-        "a_followup_cacheable": cacheable,
-        "a_sub_queries": a_follow["sub_queries"],
-        "a_rewrite_type": a_follow["rewrite_type"],
-        "b_sub_queries": b_follow["sub_queries"],
-        "c_sub_queries": c_follow["sub_queries"],
-        "hits": hits,
-        "new_session_same_cache_query": same_rewrite_b,
-        "other_context_same_cache_query": same_rewrite_c,
-        "new_session_false_hit": false_hit_b,
-        "other_context_false_hit": false_hit_c,
-        "other_context_lost": context_lost_c,
         "criteria": criteria,
-        "ok": ok,
+        "failed_criteria": [name for name, passed in criteria.items() if not passed],
+        "ok": all(criteria.values()),
+        "observations": observations,
     }
 
 
@@ -323,8 +332,10 @@ def run_probe(*, kb_id: str) -> dict:
         "variants": variants,
         "ok": positive_control and all(item["ok"] for item in variants.values()),
         "notes": [
-            "uncacheable_multi_subquery 是设计行为：多子查询且有历史时不读写答案缓存；"
-            "该情形断言「确实拆解（sub_queries>1）且 A/B/C 均无缓存命中」，不从探针中移除",
+            "ok 只由确定性断言决定（原句未被替换、无缓存键不得命中、有键且改写不一致"
+            "不得跨上下文命中、阳性对照同轮命中），模型波动不改判定",
+            "sub_queries 条数、cache_query 是否有值、改写是否稳定、上下文是否保留"
+            "属 LLM 观察项，见 observations，不参与 ok",
             "same_cache_query 为 null 表示至少一方没有缓存键，命中与否无从比较",
             "每条追问用例跑完后清理本探针身份的缓存条目，避免相互污染",
         ],
@@ -361,14 +372,21 @@ def main(argv: list[str] | None = None) -> int:
     v = report["verdict"]
     print(f"positive_control_hit={v['positive_control_hit']}")
     for name, item in v["variants"].items():
+        obs = item["observations"]
         print(
-            f"[{name}] {item['follow_up']} mode={item['mode']} "
-            f"cacheable={item['a_followup_cacheable']} sub_queries={item['a_sub_queries']} "
-            f"hits={item['hits']} ok={item['ok']}"
+            f"[{name}] {item['follow_up']} mode={obs['mode']} "
+            f"cacheable={obs['a_cacheable']} sub_queries={obs['a_sub_queries']} "
+            f"hits={obs['hits']} ok={item['ok']}"
+        )
+        print(
+            "  observations="
+            f"{{'mode_matches_expect': {obs['mode_matches_expect']}, "
+            f"'same_cache_query_new_session': {obs['same_cache_query_new_session']}, "
+            f"'same_cache_query_other_context': {obs['same_cache_query_other_context']}, "
+            f"'other_context_kept_topic': {obs['other_context_kept_topic']}}}"
         )
         if not item["ok"]:
-            failed = [key for key, passed in item["criteria"].items() if not passed]
-            print(f"  failed_criteria={failed}")
+            print(f"  failed_criteria={item['failed_criteria']}")
     print(f"ok={v['ok']}")
     print(f"结果已写入 {args.out}")
     return 0 if v["ok"] else 1
