@@ -18,6 +18,7 @@ from app.generation.llm_client import StreamChunk
 from app.generation.prompts import SYSTEM_PROMPT, build_messages
 from app.security.guardrails import (
     ATTACK_CLASSES,
+    StreamRedactor,
     classify_injection,
     judge_attack_answer,
     redact_sensitive,
@@ -173,6 +174,57 @@ def test_stream_output_redacts_secret_chunks(monkeypatch):
     assert "[已隐藏:internal_path]" in text
     # 原始法条依据仍然保留，护栏不误伤正常内容
     assert "150%" in text
+
+
+@pytest.mark.parametrize("cut", range(1, 21))
+def test_stream_redactor_blocks_cross_chunk_secret_reassembly(cut):
+    """密钥在任意位置被切开，两块拼接后都不能还原。
+
+    逐块脱敏的旧漏洞：``sk-abcdef`` 与 ``1234567890`` 各自都不匹配，
+    拼起来才是完整 Key。
+    """
+    key = "sk-abcdef1234567890"
+    redactor = StreamRedactor()
+    out = (
+        redactor.feed(key[:cut])[0]
+        + redactor.feed(key[cut:])[0]
+        + redactor.flush()[0]
+    )
+    assert key not in out
+    assert "sk-abcdef" not in out  # 前半段也不能漏
+    assert "[已隐藏:api_key]" in out
+
+
+def test_stream_redactor_passes_normal_text_through():
+    """正常文本不被暂扣：逐块立即下发，flush 无残留。"""
+    redactor = StreamRedactor()
+    text, leaks = redactor.feed("结论：试用期最长不得超过六个月。")
+    assert text == "结论：试用期最长不得超过六个月。"
+    assert leaks == []
+    assert redactor.flush() == ("", [])
+
+
+def test_stream_output_blocks_split_secret_chunks(monkeypatch):
+    """走真实生成链路：三块拼起来恰好是完整密钥，前端仍只看到占位符。"""
+    plan = make_plan("hybrid", query="加班费怎么计算")
+    llm = FakeLLMStream(
+        chunks=[
+            StreamChunk(text="API Key: sk-abcdef"),
+            StreamChunk(text="1234567890"),
+            StreamChunk(text="，请查收。"),
+        ]
+    )
+    frames, _, _, _ = run_engine(
+        monkeypatch,
+        plan,
+        llm=llm,
+        retrieve=lambda *a, **kw: type("R", (), {"hits": [make_hit("c1", 0.9, 0.8)], "reranked": True})(),
+    )
+    text = "".join(data["text"] for event, data in frames if event == "delta")
+    assert "sk-abcdef1234567890" not in text
+    assert "sk-abcdef" not in text
+    assert "[已隐藏:api_key]" in text
+    assert "请查收" in text
 
 
 def test_fixture_eval_reports_metrics_separately():

@@ -33,7 +33,7 @@ from app.core.logger import get_logger
 from app.core.metrics import record_guardrail_hit
 from app.core.sse import sse_frame
 from app.core.trace import Trace, cost_fields
-from app.security.guardrails import redact_sensitive
+from app.security.guardrails import StreamRedactor, redact_sensitive
 from app.domain_profiles import profile_for_kbs
 from app.generation.context import (
     aggregate_sources,
@@ -640,6 +640,17 @@ class AnswerEngine:
             attempt_models.append(fallback)
 
         last_exc: LLMError | None = None
+        redactor = StreamRedactor()
+
+        def _record_leaks(leaks: list[dict]) -> None:
+            if not leaks:
+                return
+            kinds = [hit["kind"] for hit in leaks]
+            result.guardrail_hits.extend(kinds)
+            for kind in kinds:
+                record_guardrail_hit(kind)
+            logger.warning("输出护栏命中：%s", sorted(set(kinds)))
+
         for idx, model in enumerate(attempt_models):
             produced_before = len(result.content)
             try:
@@ -653,14 +664,10 @@ class AnswerEngine:
                         result.token_usage = dict(chunk.usage)
                     if not chunk.text:
                         continue
-                    # 输出护栏：逐 chunk 脱敏，密钥/内部路径绝不流到前端
-                    text, leaks = redact_sensitive(chunk.text)
-                    if leaks:
-                        kinds = [hit["kind"] for hit in leaks]
-                        result.guardrail_hits.extend(kinds)
-                        for kind in kinds:
-                            record_guardrail_hit(kind)
-                        logger.warning("输出护栏命中：%s", sorted(set(kinds)))
+                    # 输出护栏：跨 chunk 脱敏（暂扣可能是密钥前半段的尾部），
+                    # 相邻块拼起来也还原不出 `sk-...`。
+                    text, leaks = redactor.feed(chunk.text)
+                    _record_leaks(leaks)
                     if not text:
                         continue
                     if result.ttft_ms is None:
@@ -680,6 +687,7 @@ class AnswerEngine:
                 if not can_fallback:
                     raise
                 result.degraded = f"llm_fallback:{fallback}"
+                redactor = StreamRedactor()  # 上一轮未下发的半截内容随失败丢弃
                 logger.warning(
                     "生成失败（%s），改用备用模型 %s 重试一次", exc.kind, fallback
                 )
@@ -688,6 +696,15 @@ class AnswerEngine:
         else:
             # 所有候选模型都失败（fallback 未配置时只会有一轮）
             raise last_exc or LLMError("生成失败：无可用模型")
+
+        # ---- 收尾：下发被暂扣的尾部（可能是完整密钥，统一脱敏）----
+        tail, tail_leaks = redactor.flush()
+        _record_leaks(tail_leaks)
+        if tail:
+            if result.ttft_ms is None:
+                result.ttft_ms = int((time.perf_counter() - started) * 1000)
+            result.content += tail
+            yield sse_frame("delta", {"text": tail})
 
         # ---- 引用在线校验：答案里出现来源外的条号时补一行提示 ----
         if gen_cfg.citation_check:

@@ -194,6 +194,116 @@ def redact_sensitive(text: str) -> tuple[str, list[dict]]:
     return text, hits
 
 
+#: 可能开启敏感串的字面前缀（全小写）。流式输出时据此判断尾部要不要暂扣：
+#: 被切开的密钥前半段自身不匹配，只有和下一块拼起来才完整。
+_SENSITIVE_STARTERS = (
+    "sk-",
+    "bearer",
+    "mysql://",
+    "postgres://",
+    "postgresql://",
+    "redis://",
+    "mongodb://",
+    "milvus://",
+    "traceback",
+    "你是 lawanswer",
+    "【资料边界】",
+    "【忠实性】",
+    "llm_api_key",
+    "dashscope_api_key",
+    "mysql_password",
+    "redis_password",
+    "/app",
+    "/srv",
+    "/home",
+    "/root",
+)
+
+#: 敏感串内部可能出现的字符；出现集合外字符说明该串已经定型，可以脱敏下发
+_TOKEN_CHAR_RE = re.compile(r"[A-Za-z0-9_.\-:/@?&=#%+~\\]")
+_DRIVE_RE = re.compile(r"[A-Za-z]:\\")
+
+
+def _hold_start(buf: str) -> int | None:
+    """返回尾部需要暂扣的起点；``None`` 表示没有潜在敏感串。
+
+    取最早的潜在起点：完整前缀出现处，或缓冲区末尾恰好是某个前缀的前半段。
+    """
+    low = buf.lower()
+    best: int | None = None
+    for lit in _SENSITIVE_STARTERS:
+        idx = low.rfind(lit)
+        if idx >= 0 and (best is None or idx < best):
+            best = idx
+        for k in range(1, len(lit)):
+            if low.endswith(lit[:k]):
+                pos = len(buf) - k
+                if best is None or pos < best:
+                    best = pos
+                break
+    m = _DRIVE_RE.search(buf)
+    if m and (best is None or m.start() < best):
+        best = m.start()
+    if re.search(r"[A-Za-z]:$", buf):
+        pos = len(buf) - 2
+        if best is None or pos < best:
+            best = pos
+    return best
+
+
+def _token_end(buf: str) -> int | None:
+    """``buf`` 以潜在敏感串开头：返回可安全定型的位置；``None`` 表示还要等。"""
+    for i, ch in enumerate(buf):
+        if not _TOKEN_CHAR_RE.match(ch):
+            return i
+    return None
+
+
+class StreamRedactor:
+    """跨 chunk 输出脱敏：拼接相邻块也无法还原完整密钥。
+
+    逐块 ``redact_sensitive`` 的漏洞：``"sk-abcdef"`` + ``"1234567890"`` 各自
+    都不匹配，拼起来却是完整 Key。这里只暂扣"可能是敏感串开头"的尾部，等
+    下一块补全后整体脱敏；与敏感串无关的正文立即下发，常规流式体验不变。
+    流结束时必须调用 :meth:`flush`，否则最后一段（可能含完整密钥）不会输出。
+    """
+
+    def __init__(self) -> None:
+        self._pending = ""
+
+    def feed(self, text: str) -> tuple[str, list[dict]]:
+        """喂入新一块，返回 (可下发的脱敏文本, 命中列表)。"""
+        self._pending += text or ""
+        parts: list[str] = []
+        while True:
+            pos = _hold_start(self._pending)
+            if pos is None:
+                parts.append(self._pending)
+                self._pending = ""
+                break
+            if pos > 0:
+                # 敏感串之前的内容与此无关，先下发
+                parts.append(self._pending[:pos])
+                self._pending = self._pending[pos:]
+            end = _token_end(self._pending)
+            if end is None or end == 0:
+                # 还没定型，或该前缀本身不以可延续字符开头（如【资料边界】）：
+                # 暂扣到流结束统一脱敏，避免无限循环。
+                break
+            # 已遇到终止符：该串定型，可脱敏下发，剩余部分继续判定
+            parts.append(self._pending[:end])
+            self._pending = self._pending[end:]
+        return redact_sensitive("".join(parts))
+
+    def flush(self) -> tuple[str, list[dict]]:
+        """流结束：把暂扣的尾部脱敏后下发。"""
+        tail, self._pending = self._pending, ""
+        if not tail:
+            return "", []
+        return redact_sensitive(tail)
+
+
+
 def safe_source_file(value: str, *, limit: int = 120) -> str:
     """来源文件名对外只暴露 basename，并再做一次敏感信息脱敏。
 
