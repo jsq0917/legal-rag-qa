@@ -399,6 +399,11 @@ def score(limit: int = 0, batch_size: int = 20) -> None:
     if limit > 0:
         rows = rows[:limit]
     rows = [r for r in rows if (r.get("answer") or "").strip() and r.get("contexts")]
+    # 与召回评估同口径：no_answer 15 条不计入主指标分母（它们考的是拒答，不是生成质量）
+    excluded_no_answer = sum(1 for r in rows if r.get("type") == "no_answer")
+    rows = [r for r in rows if r.get("type") != "no_answer"]
+    if excluded_no_answer:
+        print(f"no_answer {excluded_no_answer} 条不计入 RAGAS 主指标（与召回口径一致）")
     if not rows:
         raise SystemExit("没有可打分样本（答案或上下文为空）")
     print(f"待打分样本 {len(rows)} 条，每批 {batch_size} 条")
