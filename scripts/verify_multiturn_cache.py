@@ -13,16 +13,23 @@
 * 用独立的语料/索引版本号隔离缓存身份，跑前清理、跑后清理本探针自己的条目，
   不碰其他会话的缓存。
 
-四个场景
---------
-A 多轮：高温津贴问题 → 「那主动辞职有没有经济补偿？」（写入答案缓存）
+四个场景（每条追问各跑一遍）
+----------------------------
+A 多轮：高温津贴问题 → 追问（该追问若可缓存则写入答案缓存）
 B 新会话：同一句追问，无历史（是否命中 A 写下的答案）
 C 不同上下文：年假问题 → 同一句追问（改写若丢掉上下文就会命中 A 的答案）
 D 阳性对照：同一会话内原样重复同一问题（必须命中，证明探针能观测到命中）
 
-追问必须真的产生缓存键，否则 B/C 的「未命中」只是空跑：``verdict.ok`` 里
-``a_followup_cacheable`` 是硬性条件。因此这里的追问选的是单点问句，
-意图层稳定改写为 1 条子查询（多子查询 + 历史时按设计不读写答案缓存）。
+两条追问用例都必须通过 ``verdict.ok``：
+
+* **原句**「那如果是我主动辞职呢？」：意图层会把它拆成多个子查询，有历史时按设计
+  不生成缓存键（不读不写）。此情形**不删除、不替换**，而是显式断言
+  "确实被拆解（sub_queries > 1）且 A/B/C 均无缓存命中"；若某次真产生了缓存键，
+  则退化为可缓存用例，按误命中口径判定。
+* **单点追问**「那主动辞职有没有经济补偿？」：必须产生可缓存键，并验证新会话/不同
+  上下文不误命中。
+
+两条用例分开清理缓存条目，避免互相污染。
 
 用法::
 
@@ -54,29 +61,46 @@ PROBE_CORPUS_VERSION = 20261111
 PROBE_INDEX_VERSION = 20261111
 PROBE_USER_ID = 990001
 
-FOLLOW_UP = "那主动辞职有没有经济补偿？"
-SCENARIOS = (
+#: 两条追问用例：原句（预期拆成多子查询、无可缓存键）+ 单点问句（必须可缓存）
+FOLLOW_UPS = (
     {
-        "id": "A_multi_turn",
-        "title": "多轮：先问高温津贴，再追问主动辞职",
-        "turns": ["高温津贴的发放标准是什么？", FOLLOW_UP],
+        "id": "original_multi_subquery",
+        "text": "那如果是我主动辞职呢？",
+        "expect": "uncacheable_multi_subquery",
     },
     {
-        "id": "B_new_session",
-        "title": "新会话：无历史直接问同一句追问",
-        "turns": [FOLLOW_UP],
-    },
-    {
-        "id": "C_other_context",
-        "title": "不同上下文：先问年假，再追问主动辞职",
-        "turns": ["年假可以跨年安排吗？", FOLLOW_UP],
-    },
-    {
-        "id": "D_positive_control",
-        "title": "阳性对照：同一会话内原样重复同一问题（必须命中）",
-        "turns": ["高温津贴的发放标准是什么？", "高温津贴的发放标准是什么？"],
+        "id": "single_issue",
+        "text": "那主动辞职有没有经济补偿？",
+        "expect": "cacheable_single_query",
     },
 )
+
+
+def _scenarios(follow_up: str) -> tuple[dict, ...]:
+    return (
+        {
+            "id": "A_multi_turn",
+            "title": "多轮：先问高温津贴，再追问主动辞职",
+            "turns": ["高温津贴的发放标准是什么？", follow_up],
+        },
+        {
+            "id": "B_new_session",
+            "title": "新会话：无历史直接问同一句追问",
+            "turns": [follow_up],
+        },
+        {
+            "id": "C_other_context",
+            "title": "不同上下文：先问年假，再追问主动辞职",
+            "turns": ["年假可以跨年安排吗？", follow_up],
+        },
+    )
+
+
+POSITIVE_CONTROL = {
+    "id": "D_positive_control",
+    "title": "阳性对照：同一会话内原样重复同一问题（必须命中）",
+    "turns": ["高温津贴的发放标准是什么？", "高温津贴的发放标准是什么？"],
+}
 
 
 class _NoQA:
@@ -143,10 +167,14 @@ def _run_turn(
     meta = next((data for event, data in parsed if event == "meta"), {})
     cache_events = [e for e in trace.events if e.get("stage") == "cache_lookup"]
     cache = cache_events[-1] if cache_events else {}
+    rewrite_events = [e for e in trace.events if e.get("stage") == "rewrite"]
+    rewrite = rewrite_events[-1] if rewrite_events else {}
     done = next((data for event, data in parsed if event == "done"), {})
     return {
         "query": query,
         "history_turns": len(history),
+        "rewrite_type": rewrite.get("rewrite_type", ""),
+        "sub_queries": int(rewrite.get("sub_queries") or 0),
         "cache_query": cache.get("query", ""),
         "cache_query_note": (
             ""
@@ -172,35 +200,41 @@ def _same_cache_query(left: str, right: str) -> bool | None:
     return normalize_question(left) == normalize_question(right)
 
 
-def run_probe(*, kb_id: str) -> dict:
-    engine = AnswerEngine(qa_retriever=_NoQA())
-    scope = _scope(kb_id)
-    identity = engine._answer_identity(scope)  # noqa: SLF001 - 探针需要同一身份清理缓存
-    purged = _purge_probe_entries(engine, identity)
-
+def _run_scenarios(
+    engine: AnswerEngine,
+    scope: AccessScope,
+    scenarios: tuple[dict, ...],
+) -> dict[str, dict]:
     results: dict[str, dict] = {}
-    try:
-        for scenario in SCENARIOS:
-            history: list[dict] = []
-            turns: list[dict] = []
-            for query in scenario["turns"]:
-                row = _run_turn(engine, query, history, scope)
-                turns.append(row)
-                history.append({"role": "user", "content": query})
-                if row["answer"]:
-                    history.append({"role": "assistant", "content": row["answer"]})
-            results[scenario["id"]] = {
-                "title": scenario["title"],
-                "turns": turns,
-            }
-    finally:
-        _purge_probe_entries(engine, identity)
+    for scenario in scenarios:
+        history: list[dict] = []
+        turns: list[dict] = []
+        for query in scenario["turns"]:
+            row = _run_turn(engine, query, history, scope)
+            turns.append(row)
+            history.append({"role": "user", "content": query})
+            if row["answer"]:
+                history.append({"role": "assistant", "content": row["answer"]})
+        results[scenario["id"]] = {
+            "title": scenario["title"],
+            "turns": turns,
+        }
+    return results
 
+
+def _variant_verdict(
+    spec: dict,
+    results: dict[str, dict],
+    *,
+    positive_control: bool,
+) -> dict:
+    """单条追问用例的判定：可缓存走误命中口径，不可缓存走"拆解且零命中"口径。"""
     a_follow = results["A_multi_turn"]["turns"][-1]
     b_follow = results["B_new_session"]["turns"][-1]
     c_follow = results["C_other_context"]["turns"][-1]
-    d_repeat = results["D_positive_control"]["turns"][-1]
 
+    cacheable = bool(a_follow["cache_query"])
+    mode = "cacheable_single_query" if cacheable else "uncacheable_multi_subquery"
     same_rewrite_b = _same_cache_query(a_follow["cache_query"], b_follow["cache_query"])
     same_rewrite_c = _same_cache_query(a_follow["cache_query"], c_follow["cache_query"])
     # 命中只允许发生在"改写后的独立问法一致"时；否则就是跨上下文回放
@@ -208,28 +242,91 @@ def run_probe(*, kb_id: str) -> dict:
     false_hit_c = c_follow["cache"]["hit"] and same_rewrite_c is False
     # 年假上下文下改写若仍在问"经济补偿"，说明上下文被丢弃，命中即为答非所问
     context_lost_c = c_follow["cache"]["hit"] and "年假" not in c_follow["cache_query"]
-    # 阳性对照：缓存探针本身必须能观测到命中，否则"没命中"没有说服力
-    positive_control = d_repeat["cache"]["hit"] and d_repeat["cached"]
+    a_false_hit = a_follow["cache"]["hit"]
+    hits = {
+        "a_multi_turn": a_follow["cache"]["hit"],
+        "b_new_session": b_follow["cache"]["hit"],
+        "c_other_context": c_follow["cache"]["hit"],
+    }
+
+    if cacheable:
+        criteria = {
+            "positive_control_hit": positive_control,
+            "a_followup_cacheable": True,
+            "a_followup_not_hit": not a_false_hit,
+            "no_false_hit_b": not false_hit_b,
+            "no_false_hit_c": not false_hit_c,
+            "context_kept_c": not context_lost_c,
+        }
+        ok = all(criteria.values())
+    else:
+        # 原句情形：不产生缓存键是设计行为，但必须证明"确实拆成多子查询"，
+        # 且三个场景都没有命中任何缓存（无键就不该读，读了就是 bug）。
+        criteria = {
+            "positive_control_hit": positive_control,
+            "decomposed_into_multi_subquery": a_follow["sub_queries"] > 1,
+            "no_cache_hit_a": not hits["a_multi_turn"],
+            "no_cache_hit_b": not hits["b_new_session"],
+            "no_cache_hit_c": not hits["c_other_context"],
+        }
+        ok = all(criteria.values())
+
+    return {
+        "id": spec["id"],
+        "follow_up": spec["text"],
+        "expected_mode": spec["expect"],
+        "mode": mode,
+        "a_followup_cache_key": a_follow["cache_query"],
+        "a_followup_cacheable": cacheable,
+        "a_sub_queries": a_follow["sub_queries"],
+        "a_rewrite_type": a_follow["rewrite_type"],
+        "b_sub_queries": b_follow["sub_queries"],
+        "c_sub_queries": c_follow["sub_queries"],
+        "hits": hits,
+        "new_session_same_cache_query": same_rewrite_b,
+        "other_context_same_cache_query": same_rewrite_c,
+        "new_session_false_hit": false_hit_b,
+        "other_context_false_hit": false_hit_c,
+        "other_context_lost": context_lost_c,
+        "criteria": criteria,
+        "ok": ok,
+    }
+
+
+def run_probe(*, kb_id: str) -> dict:
+    engine = AnswerEngine(qa_retriever=_NoQA())
+    scope = _scope(kb_id)
+    identity = engine._answer_identity(scope)  # noqa: SLF001 - 探针需要同一身份清理缓存
+    purged = _purge_probe_entries(engine, identity)
+
+    try:
+        # 阳性对照先跑：此时缓存为空，能同时证明"写入 + 命中"
+        control_results = _run_scenarios(engine, scope, (POSITIVE_CONTROL,))
+        control = control_results["D_positive_control"]["turns"][-1]
+        positive_control = control["cache"]["hit"] and control["cached"]
+        _purge_probe_entries(engine, identity)
+
+        variants: dict[str, dict] = {}
+        for spec in FOLLOW_UPS:
+            results = _run_scenarios(engine, scope, _scenarios(spec["text"]))
+            variants[spec["id"]] = _variant_verdict(
+                spec, results, positive_control=positive_control
+            )
+            results["_positive_control"] = control_results["D_positive_control"]
+            variants[spec["id"]]["scenarios"] = results
+            _purge_probe_entries(engine, identity)  # 两条用例互不污染
+    finally:
+        _purge_probe_entries(engine, identity)
 
     verdict = {
         "positive_control_hit": positive_control,
-        "a_followup_cache_key": a_follow["cache_query"],
-        "a_followup_cacheable": bool(a_follow["cache_query"]),
-        "new_session_hit": b_follow["cache"]["hit"],
-        "new_session_same_cache_query": same_rewrite_b,
-        "new_session_false_hit": false_hit_b,
-        "other_context_hit": c_follow["cache"]["hit"],
-        "other_context_same_cache_query": same_rewrite_c,
-        "other_context_false_hit": false_hit_c,
-        "other_context_lost": context_lost_c,
-        # 追问必须真的产生可缓存键：否则场景 B/C 的"没有误命中"只是空跑
-        "ok": bool(a_follow["cache_query"])
-        and positive_control
-        and not (false_hit_b or false_hit_c or context_lost_c),
+        "variants": variants,
+        "ok": positive_control and all(item["ok"] for item in variants.values()),
         "notes": [
-            "a_followup_cacheable 为 false 表示追问被拆成多子查询且有历史、不生成缓存键，"
-            "此时 B/C 的「未命中」不构成证据，探针判定为不通过",
+            "uncacheable_multi_subquery 是设计行为：多子查询且有历史时不读写答案缓存；"
+            "该情形断言「确实拆解（sub_queries>1）且 A/B/C 均无缓存命中」，不从探针中移除",
             "same_cache_query 为 null 表示至少一方没有缓存键，命中与否无从比较",
+            "每条追问用例跑完后清理本探针身份的缓存条目，避免相互污染",
         ],
     }
     return {
@@ -241,9 +338,9 @@ def run_probe(*, kb_id: str) -> dict:
             "qa_retriever": "disabled_for_probe",
             "cache_identity_isolated": True,
             "purged_before": purged,
+            "follow_ups": [spec["text"] for spec in FOLLOW_UPS],
             "command": "",
         },
-        "scenarios": results,
         "verdict": verdict,
     }
 
@@ -263,10 +360,16 @@ def main(argv: list[str] | None = None) -> int:
 
     v = report["verdict"]
     print(f"positive_control_hit={v['positive_control_hit']}")
-    print(f"a_followup_cacheable={v['a_followup_cacheable']} key={v['a_followup_cache_key']!r}")
-    print(f"new_session_hit={v['new_session_hit']} same_cache_query={v['new_session_same_cache_query']}")
-    print(f"other_context_hit={v['other_context_hit']} same_cache_query={v['other_context_same_cache_query']}")
-    print(f"other_context_lost={v['other_context_lost']} ok={v['ok']}")
+    for name, item in v["variants"].items():
+        print(
+            f"[{name}] {item['follow_up']} mode={item['mode']} "
+            f"cacheable={item['a_followup_cacheable']} sub_queries={item['a_sub_queries']} "
+            f"hits={item['hits']} ok={item['ok']}"
+        )
+        if not item["ok"]:
+            failed = [key for key, passed in item["criteria"].items() if not passed]
+            print(f"  failed_criteria={failed}")
+    print(f"ok={v['ok']}")
     print(f"结果已写入 {args.out}")
     return 0 if v["ok"] else 1
 

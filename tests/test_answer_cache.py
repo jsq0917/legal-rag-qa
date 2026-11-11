@@ -315,3 +315,52 @@ class TestEngineIntegration:
         )
         _run(engine, "那这个呢怎么办")
         assert cache.lookup("那这个呢怎么办") is None
+
+
+def test_probe_verdict_covers_uncacheable_multi_subquery():
+    """原追问若被拆成多子查询、不产生缓存键，探针必须判它"确实拆解且零命中"。
+
+    这条分支不依赖线上 LLM 的随机拆解结果：这里用合成轮次把"无缓存键"的情形
+    固定覆盖住，避免它只在某几次真实运行里偶然出现。
+    """
+    from scripts.verify_multiturn_cache import _variant_verdict
+
+    def turn(query: str, *, cache_query: str = "", hit: bool = False, sub_queries: int = 1) -> dict:
+        return {
+            "query": query,
+            "rewrite_type": "decompose" if sub_queries > 1 else "direct",
+            "sub_queries": sub_queries,
+            "cache_query": cache_query,
+            "cache": {"eligible": bool(cache_query), "hit": hit, "query": cache_query},
+            "cached": hit,
+        }
+
+    spec = {
+        "id": "original_multi_subquery",
+        "text": "那如果是我主动辞职呢？",
+        "expect": "uncacheable_multi_subquery",
+    }
+    follow_up = spec["text"]
+    results = {
+        "A_multi_turn": {"turns": [turn("高温津贴"), turn(follow_up, sub_queries=2)]},
+        "B_new_session": {"turns": [turn(follow_up)]},
+        "C_other_context": {"turns": [turn("年假"), turn(follow_up, sub_queries=2)]},
+    }
+
+    verdict = _variant_verdict(spec, results, positive_control=True)
+    assert verdict["mode"] == "uncacheable_multi_subquery"
+    assert verdict["criteria"]["decomposed_into_multi_subquery"] is True
+    assert verdict["ok"] is True
+
+    # 没有缓存键却出现命中 = 探针必须判红（无键就不该读缓存）
+    results["B_new_session"]["turns"][0]["cache"]["hit"] = True
+    bad = _variant_verdict(spec, results, positive_control=True)
+    assert bad["ok"] is False
+    assert bad["criteria"]["no_cache_hit_b"] is False
+
+    # 没有缓存键、也没拆成多子查询：既不是设计行为，也不能算通过
+    results["B_new_session"]["turns"][0]["cache"]["hit"] = False
+    results["A_multi_turn"]["turns"][1]["sub_queries"] = 1
+    undecomposed = _variant_verdict(spec, results, positive_control=True)
+    assert undecomposed["criteria"]["decomposed_into_multi_subquery"] is False
+    assert undecomposed["ok"] is False
