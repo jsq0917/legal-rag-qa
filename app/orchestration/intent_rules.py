@@ -81,6 +81,12 @@ COMPLEX_CONNECTORS: tuple[str, ...] = (
 #: 多问题特征（多个问号或"……？……？"）
 _MULTI_QUESTION_RE = re.compile(r"[?？].*[?？]")
 
+#: 多诉求连接词：问句里出现"还要/同时/以及"等，通常对应两处以上规定
+MULTI_ISSUE_CONNECTORS: tuple[str, ...] = ("还", "同时", "以及", "另外", "而且", "并且", "、")
+
+#: 分句分隔符（英文逗号也常见于用户输入）
+_CLAUSE_SEPARATORS: tuple[str, ...] = ("，", ",", "；", ";")
+
 #: 子查询拆分分隔符：只按**显式**分隔符切（分号/句号/以及/并且/同时/还有）。
 #: 不能按"和"切——"和解协议"这类词会被误切，破坏检索语义。
 _SUBQUERY_SPLIT_RE = re.compile(r"[；;。]|以及|并且|同时|还有")
@@ -152,6 +158,23 @@ def rule_complexity(query: str) -> str:
     if len(text) < 15 and not any(c in text for c in COMPLEX_CONNECTORS):
         return "simple"
     return "medium"
+
+
+def is_multi_issue(query: str) -> bool:
+    """多诉求问句：多个问号，或含分句且带并列/递进连接词。
+
+    与 ``rule_complexity`` 的区别：后者判"难不难"，本函数判"是不是要分别检索
+    两处规定"。仅用于检索配额（多跳定点分析：单查询路径下正确法条常落在
+    重排第 6-13 名，被最终 topK 截掉）。
+    """
+    q = (query or "").strip()
+    if not q:
+        return False
+    if q.count("？") + q.count("?") > 1:
+        return True
+    if not any(sep in q for sep in _CLAUSE_SEPARATORS):
+        return False
+    return any(c in q for c in MULTI_ISSUE_CONNECTORS)
 
 
 def rule_rewrite_type(query: str, history: list[dict] | None = None) -> str:

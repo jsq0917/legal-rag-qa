@@ -212,3 +212,35 @@ class TestRuleSubQueries:
 
         assert rule_sub_queries("") == []
         assert rule_sub_queries("   ") == []
+
+
+class TestMultiIssue:
+    """多诉求问句判定：只用于检索配额，不改变意图字段。"""
+
+    @pytest.mark.parametrize(
+        "query",
+        [
+            "公司拖欠工资，我能不能直接走人还要补偿？",
+            "公司违法解除合同，赔偿金和经济补偿能同时主张吗",
+            "口头说好试用期三个月但合同没写，还作数吗？",
+            "未签合同的二倍工资怎么算？仲裁时效多久？",
+        ],
+    )
+    def test_multi_issue_true(self, query):
+        from app.orchestration.intent_rules import is_multi_issue
+
+        assert is_multi_issue(query) is True
+
+    @pytest.mark.parametrize(
+        "query",
+        [
+            "试用期最长可以约定多久？",
+            "加班费怎么算",
+            "怀孕期间被公司辞退，我能主张什么？",  # 只有一个诉求，不因逗号放大
+            "",
+        ],
+    )
+    def test_multi_issue_false(self, query):
+        from app.orchestration.intent_rules import is_multi_issue
+
+        assert is_multi_issue(query) is False

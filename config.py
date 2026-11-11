@@ -317,6 +317,10 @@ class Settings(BaseSettings):
     # 稀疏路候选池比例：<1 时稀疏少取候选，避免挤占稠密正确条的候选名额
     # （REPORT §4.4 证伪加权 RRF 后的真实怀疑点：名额之争而非权重之争）
     retrieval_sparse_pool_ratio: float = Field(default=1.0, ge=0.1, le=1.0)
+    # 多诉求问句（含分句 + 并列/递进连接词）的单查询路径把最终 topK 放大 N 条：
+    # 多跳定点分析显示 10/59 条期望法条已在重排候选池内、却排在 6-13 名被截断。
+    # 0 = 关闭；仅在未走 decompose 多路检索时生效。
+    retrieval_multi_issue_topk_bonus: int = Field(default=3, ge=0, le=6)
     # 检索选路分流：simple / 非拆解单跳走纯稠密（消融 L1 R@5 0.7405 高于
     # 混合 L3 0.7024），decompose 多跳、complex、跨法则走混合（稀疏路对
     # 跨法术语互补）。关闭后一律 hybrid，与旧行为一致。

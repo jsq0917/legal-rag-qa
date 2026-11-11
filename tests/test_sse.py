@@ -111,8 +111,8 @@ class FakeRetrieveResult:
 def fake_retrieve_fn(hits, *, raises: Exception | None = None):
     calls = []
 
-    def _fn(question, *, kb_ids=None, complexity="medium", settings=None, **kw):
-        calls.append({"question": question, "kb_ids": kb_ids, "complexity": complexity})
+    def _fn(question, *, kb_ids=None, complexity="medium", settings=None, topk=None, **kw):
+        calls.append({"question": question, "kb_ids": kb_ids, "complexity": complexity, "topk": topk})
         if raises is not None:
             raise raises
         return FakeRetrieveResult(hits)

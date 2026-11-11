@@ -225,3 +225,24 @@ class TestRetrievePathPolicy:
         questions = [c["question"] for c in retrieve.calls]
         assert set(questions) == {plan.query, "经济补偿计算标准", "代通知金规定"}
         assert len(retrieve.calls) == 3
+
+    def test_multi_issue_question_gets_topk_bonus(self, monkeypatch):
+        """多诉求单点问句：最终 topK 放大，补回被截断在 6-13 名的第二处规定。"""
+        from config import get_settings
+
+        plan = make_plan("pure_vector", query="公司拖欠工资，我能不能直接走人还要补偿？")
+        retrieve = fake_retrieve_fn([make_hit("c1", 0.5, rerank=1.0)])
+        run(monkeypatch, plan, retrieve=retrieve)
+        settings = get_settings()
+        expected = (
+            settings.retrieval.topk_for("medium")
+            + settings.retrieval_multi_issue_topk_bonus
+        )
+        assert retrieve.calls[0]["topk"] == expected
+
+    def test_single_issue_question_keeps_default_topk(self, monkeypatch):
+        """单一诉求：不放大，避免无谓增加上下文。"""
+        plan = make_plan("pure_vector", query="试用期最长可以约定多久？")
+        retrieve = fake_retrieve_fn([make_hit("c1", 0.5, rerank=1.0)])
+        run(monkeypatch, plan, retrieve=retrieve)
+        assert retrieve.calls[0]["topk"] is None

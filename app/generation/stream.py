@@ -57,6 +57,7 @@ from app.generation.prompts import (
     build_messages,
 )
 from app.orchestration.answer_cache import AnswerCache, CachedAnswer, get_answer_cache
+from app.orchestration.intent_rules import is_multi_issue
 from app.orchestration.qa_cache import QARetriever
 from app.orchestration.service import QueryPlan, analyze_query
 from config import ConfigError, Settings, get_settings
@@ -587,10 +588,17 @@ class AnswerEngine:
                     retrieve_fn=self._retrieve_fn or retrieve,
                 )
             else:
+                # 多诉求单点问句：正确法条常落在重排后 6-13 名被截断，
+                # 按配置放大最终 topK（多跳定点：10/59 条属这一情形）。
+                bonus = int(getattr(settings, "retrieval_multi_issue_topk_bonus", 0) or 0)
+                topk = None
+                if bonus and is_multi_issue(plan.query):
+                    topk = settings.retrieval.topk_for(plan.intent.complexity) + bonus
                 res = (self._retrieve_fn or retrieve)(
                     plan.query,
                     kb_ids=list(route_kb_ids) or None,
                     complexity=plan.intent.complexity,
+                    topk=topk,
                     law_hints=list(plan.intent.law_hints) or None,
                     mode="auto",
                     rewrite_type=plan.intent.rewrite_type,
