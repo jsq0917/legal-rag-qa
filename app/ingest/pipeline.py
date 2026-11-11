@@ -43,6 +43,7 @@ from app.ingest.writer import (
     delete_document_vectors,
     finish_ingest_job,
     get_document_by_sha1,
+    get_ready_document_by_filename,
     insert_chunks,
     insert_ingest_job,
     parse_config_json,
@@ -298,6 +299,9 @@ def ingest(
     owns_session = session is None
     context = session_scope() if owns_session else _null_context(session)
     with context as db:
+        # 上传接口会先落一条 pending 占位行（含展示名与新文件的存储路径）；
+        # 展示名带随机前缀的磁盘名不能直接写进 documents.filename。
+        pending_naming = get_document_naming(db, doc_id) if doc_id else None
         existing = get_document_by_sha1(db, kb_id, prepared.content_sha1)
         same_config = (
             existing is not None
@@ -323,6 +327,24 @@ def ingest(
                 elapsed_ms=int((time.perf_counter() - started) * 1000),
                 message="内容与解析参数均未变化，跳过",
             )
+
+        # 同名文件内容变化：复用已有 ready 文档的 doc_id，避免同一份资料
+        # 在列表里出现多条记录。展示名与存储路径沿用本次 pending 行（新文件）。
+        naming_override: dict | None = None
+        if existing is None and not force:
+            display_name = (pending_naming or {}).get("filename") or prepared.source_file
+            same_name = get_ready_document_by_filename(db, kb_id, display_name)
+            if same_name is not None:
+                if doc_id and doc_id != same_name["id"]:
+                    naming_override = dict(pending_naming or {})
+                    db.execute(
+                        text(
+                            "DELETE FROM documents WHERE id = :id AND status = 'pending' "
+                            "AND chunk_count = 0"
+                        ),
+                        {"id": doc_id},
+                    )
+                existing = same_name
 
         # 上传接口会预生成 doc_id（先落一条 pending 行给前端轮询），此处沿用
         doc_id = existing["id"] if existing else (doc_id or new_id())
@@ -382,7 +404,8 @@ def ingest(
         # prepared.source_file 是磁盘上的存储名（上传时带随机前缀），
         # 展示名与存储路径必须沿用库里已有的值：上传文件在 data/uploads/ 下，
         # 若改写成 data/raw/<存储名>，"重新解析"会找不到源文件。
-        naming = get_document_naming(db, doc_id) or {}
+        # 同名复用走 naming_override：新文件的路径在 pending 行里，旧 doc_id 查不到。
+        naming = naming_override or (get_document_naming(db, doc_id) or {})
         upsert_document(
             db,
             {

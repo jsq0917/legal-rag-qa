@@ -34,14 +34,21 @@ def client():
 
 
 def _wait_ready(
-    client: TestClient, doc_id: str, headers: dict | None = None, timeout_s: float = 180.0
+    client: TestClient,
+    doc_id: str,
+    headers: dict | None = None,
+    timeout_s: float = 180.0,
+    min_version: int = 0,
 ) -> dict:
     import time
 
     deadline = time.time() + timeout_s
     while time.time() < deadline:
         detail = client.get(f"/api/documents/{doc_id}", headers=headers).json()
-        if detail["status"] in {"ready", "failed"}:
+        if (
+            detail.get("status") in {"ready", "failed"}
+            and int(detail.get("version") or 0) >= min_version
+        ):
             return detail
         time.sleep(1.5)
     raise AssertionError(f"文档 {doc_id} 在 {timeout_s}s 内未完成解析")
@@ -113,5 +120,40 @@ class TestUploadNaming:
         phantom = [d for d in docs if d["id"] == second]
         assert phantom == [], "重复上传的占位行应被清理，不能留下永久 pending"
         assert any(d["id"] == first and d["status"] == "ready" for d in docs)
+
+        assert client.delete(f"/api/documents/{first}", headers=self.headers).status_code == 200
+
+    def test_same_filename_changed_content_reuses_doc_id(self, client):
+        """同名文件改内容：复用原 doc_id 重建，不产生第二条文档、不留占位行。"""
+        filename = f"e2e-same-{uuid.uuid4().hex[:8]}.md"
+        content_a = f"# 同名改内容样例\n\n第一条 初始内容（{uuid.uuid4().hex[:6]}）。\n"
+        first = client.post(
+            "/api/kbs/kb_labor/documents",
+            files={"files": (filename, content_a.encode("utf-8"), "text/markdown")},
+            data={"chunk_size": "300", "overlap": "50", "retrieval_mode": "hybrid"},
+            headers=self.headers,
+        ).json()["accepted"][0]["doc_id"]
+        assert _wait_ready(client, first, self.headers)["status"] == "ready"
+
+        content_b = (
+            f"# 同名改内容样例\n\n第一条 更新后的内容（{uuid.uuid4().hex[:6]}）。\n\n"
+            "第二条 用于验证同名复用不会新增文档。\n"
+        )
+        second = client.post(
+            "/api/kbs/kb_labor/documents",
+            files={"files": (filename, content_b.encode("utf-8"), "text/markdown")},
+            data={"chunk_size": "300", "overlap": "50", "retrieval_mode": "hybrid"},
+            headers=self.headers,
+        ).json()["accepted"][0]["doc_id"]
+        assert second != first
+
+        detail = _wait_ready(client, first, self.headers, min_version=2)
+        assert detail["status"] == "ready", detail.get("error_msg")
+        assert detail["chunk_count"] >= 1
+
+        docs = client.get("/api/kbs/kb_labor/documents", headers=self.headers).json()
+        same_name = [d for d in docs if d["filename"] == filename]
+        assert [d["id"] for d in same_name] == [first], "同名改内容不应产生重复文档"
+        assert all(d["id"] != second for d in docs), "占位行应被清理，不能留下 pending"
 
         assert client.delete(f"/api/documents/{first}", headers=self.headers).status_code == 200

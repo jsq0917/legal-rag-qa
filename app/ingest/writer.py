@@ -44,6 +44,31 @@ def get_document_by_sha1(session: Session, kb_id: str, content_sha1: str) -> dic
     ).mappings().first()
     if not row:
         return None
+    return _decode_document_row(row)
+
+
+def get_ready_document_by_filename(
+    session: Session, kb_id: str, filename: str
+) -> dict | None:
+    """按 ``(kb_id, filename, status='ready')`` 找最近一次成功入库的文档。
+
+    同名文件内容变化时应复用它，避免同一份资料在列表里出现多条记录。
+    """
+    row = session.execute(
+        text(
+            "SELECT id, status, parse_config, article_count, chunk_count, version, "
+            "effective_from, effective_to "
+            "FROM documents WHERE kb_id = :kb_id AND filename = :filename AND status = 'ready' "
+            "ORDER BY updated_at DESC, id DESC LIMIT 1"
+        ),
+        {"kb_id": kb_id, "filename": filename},
+    ).mappings().first()
+    if not row:
+        return None
+    return _decode_document_row(row)
+
+
+def _decode_document_row(row) -> dict:
     data = dict(row)
     # MySQL 的 JSON 列经 PyMySQL 读回来是字符串，这里统一解码，
     # 否则调用方 dict(...) 会直接抛 ValueError（踩过）。
