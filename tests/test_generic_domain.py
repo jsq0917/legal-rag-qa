@@ -19,8 +19,9 @@ from app.domain_profiles import (
     profile_for_kb,
     profile_for_kbs,
 )
-from app.generation.context import build_context_sources
+from app.generation.context import aggregate_sources, build_context_sources
 from app.generation.prompts import ContextSource, build_messages
+from app.generation.stream import AnswerEngine
 from app.ingest.pipeline import _clip_title, prepare
 from app.orchestration.models import IntentResult
 from app.orchestration.router import route as decide_route
@@ -200,6 +201,36 @@ def test_context_sources_follow_kb_domain():
     assert legal.domain == "legal" and legal.kind == "law"
     assert legal.article_no == "第三十九条"
     assert "施行" in legal.title
+
+
+def test_generic_sections_survive_aggregation_and_reach_prompt():
+    """产品资料无条号：不能按 (法名, 条号) 互相覆盖，且必须进 Prompt。"""
+
+    def _hit(chunk_id: str, section: str, score: float):
+        return SimpleNamespace(
+            kb_id="kb_generic",
+            law_name="Nova 便携空气净化器 P2 使用手册",
+            chapter_path=section,
+            article_no="",
+            content=f"{section}正文",
+            parent_content=f"{section}正文",
+            rerank_score=None,
+            score=score,
+            chunk_id=chunk_id,
+            effective_from="",
+            effective_to="",
+            version=1,
+        )
+
+    hits = [_hit("c1", "滤芯更换", 0.8), _hit("c2", "安全警告", 0.7)]
+    refs = aggregate_sources(hits=hits)
+    assert len(refs) == 2, "同一手册的不同章节被错误去重"
+    assert all(r.kind == "section" and r.article_no == "" for r in refs)
+
+    context_sources = build_context_sources(hits=hits)
+    block = AnswerEngine._build_context(context_sources, None, _settings().generation)
+    assert "【知识库资料】" in block
+    assert "滤芯更换" in block and "安全警告" in block
 
 
 def test_generic_kb_scope_and_cache_isolated():

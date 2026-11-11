@@ -1,0 +1,83 @@
+{
+  "command": "EMBEDDING_DEVICE=cpu uv run python scripts/verify_generic_qa.py --kb kb_generic --query \"滤芯指示灯变成红色常亮，应该怎么处理？\"",
+  "generated_at": "2026-11-11T02:09:16.311551+00:00",
+  "kb_id": "kb_generic",
+  "query": "滤芯指示灯变成红色常亮，应该怎么处理？",
+  "mysql": {
+    "kb": {
+      "id": "kb_generic",
+      "tenant_id": "tnt_generic_demo",
+      "is_public": 0,
+      "doc_count": 1,
+      "chunk_count": 8,
+      "corpus_version": 4,
+      "index_version": 4
+    },
+    "documents": [
+      {
+        "id": "JADCAZZB566Q1CP801M738SWB5",
+        "filename": "nova_purifier_manual.md",
+        "status": "ready",
+        "article_count": 0,
+        "chunk_count": 8
+      }
+    ],
+    "parent_chunks": 8,
+    "milvus_database": "lawanswer",
+    "collection": "law_chunks"
+  },
+  "milvus": {
+    "entities": 8
+  },
+  "route": "pure_vector",
+  "degraded": false,
+  "retrieval": {
+    "count": 3,
+    "top": [
+      {
+        "law": "Nova 便携空气净化器 P2 使用手册",
+        "chapter_path": "滤芯更换",
+        "article_no": "",
+        "score": 0.7256265799915761,
+        "chunk_id": "JADCAZZB566Q1CP801M738SWB5:p4:c0"
+      },
+      {
+        "law": "Nova 便携空气净化器 P2 使用手册",
+        "chapter_path": "常见问题",
+        "article_no": "",
+        "score": 0.009144818677093242,
+        "chunk_id": "JADCAZZB566Q1CP801M738SWB5:p6:c0"
+      },
+      {
+        "law": "Nova 便携空气净化器 P2 使用手册",
+        "chapter_path": "清洁与保养",
+        "article_no": "",
+        "score": 0.0006360575285081407,
+        "chunk_id": "JADCAZZB566Q1CP801M738SWB5:p5:c0"
+      }
+    ]
+  },
+  "sses": {
+    "aggregated_sources": 3,
+    "kinds": [
+      "section"
+    ]
+  },
+  "prompt": {
+    "context_chars": 335,
+    "knowledge_sources": 3
+  },
+  "answer": "你问的是 Nova P2 空气净化器滤芯指示灯红色常亮时该怎么处理。按你给的资料，这表示需要更换滤芯，按更换流程操作并复位滤芯计时即可。\n\n依据资料1《Nova 便携空气净化器 P2 使用手册》·滤芯更换：\n- “当滤芯指示灯变为红色时常亮，表示需要更换滤芯。”\n- 操作步骤：打开机身背部的滤芯仓门，取出旧滤芯，装入 Nova P2 专用复合滤芯，听到卡扣闭合声后关闭仓门；更换后长按电源键 5 秒复位滤芯计时。\n\n实务提示（均出自资料1、资料3）：\n- 必须使用 Nova P2 专用复合滤芯，装入时听到卡扣闭合声再关仓门（资料1）。\n- 滤芯不可水洗；可用吸尘器低档吸除表面浮尘，但这不能替代更换（资料3）。\n- 若更换后仍有异味，资料2建议检查滤芯是否过期并联系官方客服（资料2）。\n\n以上分析仅供参考，具体以裁判机关认定为准。",
+  "citation": {
+    "cited_sections": [
+      "《Nova 便携空气净化器 P2 使用手册》·滤芯更换"
+    ],
+    "cited_expected_section": true
+  },
+  "model": "deepseek-v4.1-flash",
+  "usage": {
+    "prompt_tokens": 984,
+    "completion_tokens": 240,
+    "total_tokens": 1224
+  }
+}

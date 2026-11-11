@@ -128,15 +128,16 @@ def sources_from_hits(hits: Sequence | None) -> list[SourceRef]:
     out: list[SourceRef] = []
     for h in hits or []:
         score = h.rerank_score if h.rerank_score is not None else h.score
+        domain = profile_name_for_kb(getattr(h, "kb_id", "") or "")
         out.append(
             SourceRef(
                 law=h.law_name,
                 chapter_path=h.chapter_path,
-                article_no=h.article_no,
+                article_no="" if domain == "generic" else h.article_no,
                 score=score,
                 snippet=_snippet(h.parent_content or h.content),
                 chunk_id=h.chunk_id,
-                kind="law",
+                kind="law" if domain == "legal" else "section",
                 effective_from=getattr(h, "effective_from", ""),
                 effective_to=getattr(h, "effective_to", ""),
                 version=getattr(h, "version", 0),
@@ -157,7 +158,7 @@ def aggregate_sources(
     hits: Sequence | None = None,
     limit: int = 10,
 ) -> list[SourceRef]:
-    """合并问答 + 同类参考 + 检索来源：去重（法名#条号）、按分数降序、限量。"""
+    """合并问答 + 同类参考 + 检索来源：去重（法名#条号；无条号用块 ID）、按分数降序、限量。"""
     merged = (
         sources_from_qa(qa_hit, similarity=similarity)
         + [r for qa in (references or []) for r in sources_from_qa(qa, is_reference=True)]
@@ -165,7 +166,9 @@ def aggregate_sources(
     )
     best: dict[tuple[str, str], SourceRef] = {}
     for ref in merged:
-        key = (ref.law, ref.article_no)
+        # 产品资料（generic）没有条号，同一手册的多个章节必须用块 ID 区分，
+        # 否则会被当成同一条来源互相覆盖。
+        key = (ref.law, ref.article_no or ref.chunk_id)
         if key not in best or ref.score > best[key].score:
             best[key] = ref
     ordered = sorted(best.values(), key=lambda r: r.score, reverse=True)

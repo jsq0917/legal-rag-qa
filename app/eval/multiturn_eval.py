@@ -536,9 +536,9 @@ def evaluate_live(
             gen_error = ""
             if hits:
                 sources = build_context_sources(hits=hits)
-                law_sources = [c for c in sources if c.kind == "law"]
+                context_sources = [c for c in sources if c.kind in ("law", "section")]
                 block, _ = build_context_block(
-                    law_sources, max_chars=getattr(s, "gen_context_max_chars", 6000)
+                    context_sources, max_chars=getattr(s, "gen_context_max_chars", 6000)
                 )
                 messages = build_messages(observed_standalone, context_block=block, history=history)
                 try:

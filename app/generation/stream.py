@@ -572,15 +572,24 @@ class AnswerEngine:
 
     @staticmethod
     def _build_context(context_sources: Sequence, qa_hit, gen_cfg) -> str:
-        """混合链路：标准答案作结论段置顶，法条作依据段（§6.3）。"""
+        """混合链路：标准答案作结论段置顶，法规/产品资料作依据段（§6.3）。"""
         parts: list[str] = []
         if qa_hit is not None:
             parts.append(qa_conclusion_block(qa_hit))
-        law_sources = [c for c in context_sources if c.kind == "law"]
-        if law_sources:
-            block, _ = build_context_block(law_sources, max_chars=gen_cfg.context_max_chars)
+        # 法条 kind="law"，非法律库章节 kind="section"：两者都必须进 Prompt，
+        # 否则 generic 知识库的检索结果会被静默丢弃（N3 验收缺陷）。
+        knowledge_sources = [c for c in context_sources if c.kind in ("law", "section")]
+        if knowledge_sources:
+            label = (
+                "【法条资料】"
+                if all(c.kind == "law" for c in knowledge_sources)
+                else "【知识库资料】"
+            )
+            block, _ = build_context_block(
+                knowledge_sources, max_chars=gen_cfg.context_max_chars
+            )
             if block:
-                parts.append(f"【法条资料】\n{block}")
+                parts.append(f"{label}\n{block}")
         # 无精确命中时的同类参考也进上下文（问+答成对给出）
         refs = [c for c in context_sources if c.kind == "qa" and c.law != "高频问答库"]
         for ref in refs[:3]:
