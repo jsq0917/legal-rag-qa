@@ -100,6 +100,10 @@ def main() -> int:
             res = multi(subs, base_topk) if use_multi else single(base_topk)
         elif variant == "A":
             res = multi(subs, base_topk + 3) if use_multi else single(base_topk + 3)
+        elif variant in ("M", "M1", "M2"):
+            # 只给多路加 topK：单查询路径不动，用来验证"多路配额"单独的效果
+            bonus = {"M": 3, "M1": 1, "M2": 2}[variant]
+            res = multi(subs, base_topk + bonus) if use_multi else single(base_topk)
         elif variant in ("B", "C", "D"):
             voters = subs if use_multi else ([rewrite] if rewrite and rewrite != case["question"] else [])
             if not voters:
