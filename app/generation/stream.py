@@ -32,7 +32,7 @@ from app.core.access import AccessScope, answer_identity
 from app.core.logger import get_logger
 from app.core.metrics import record_guardrail_hit
 from app.core.sse import sse_frame
-from app.core.trace import Trace
+from app.core.trace import Trace, cost_fields
 from app.security.guardrails import redact_sensitive
 from app.domain_profiles import profile_for_kbs
 from app.generation.context import (
@@ -232,6 +232,23 @@ class AnswerEngine:
                 tokens=plan.intent.token_usage or {},
                 degraded=bool(plan.degraded),
                 validation_errors=list(plan.intent.validation_errors),
+                **cost_fields(
+                    plan.intent.token_usage,
+                    prompt_per_1k=s.llm_cost_prompt_per_1k,
+                    completion_per_1k=s.llm_cost_completion_per_1k,
+                ),
+            )
+            # 独立化改写单独成段（与 intent 同时完成，但语义上是独立决策）：
+            # 只记是否改写、子查询数量与历史轮数，不写入问题正文。
+            trace.record(
+                "rewrite",
+                latency_ms=0,
+                measured_with="intent",
+                rewrite_type=plan.intent.rewrite_type,
+                changed=plan.intent.rewrite_type not in ("", "direct"),
+                sub_queries=len(plan.sub_queries),
+                history_turns=len(history or []),
+                cache_query_ready=bool(plan.cache_query),
             )
             trace.record(
                 "route",
@@ -410,6 +427,11 @@ class AnswerEngine:
                 cached=False,
                 degraded=result.degraded or "",
                 error=result.error or "",
+                **cost_fields(
+                    result.token_usage,
+                    prompt_per_1k=s.llm_cost_prompt_per_1k,
+                    completion_per_1k=s.llm_cost_completion_per_1k,
+                ),
             )
             if result.guardrail_hits:
                 trace.record(

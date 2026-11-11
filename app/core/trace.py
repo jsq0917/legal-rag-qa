@@ -37,6 +37,30 @@ def new_trace_id() -> str:
     return uuid.uuid4().hex[:16]
 
 
+def cost_fields(
+    tokens: dict | None, *, prompt_per_1k: float, completion_per_1k: float
+) -> dict:
+    """把 token 用量换算成可比较的成本字段（人民币元）。
+
+    只做估算：单价来自配置，默认值仅用于横向比较，不作为账单依据。
+    """
+    tokens = dict(tokens or {})
+    prompt = int(tokens.get("prompt_tokens") or 0)
+    completion = int(tokens.get("completion_tokens") or 0)
+    prompt_cost = prompt / 1000 * float(prompt_per_1k or 0)
+    completion_cost = completion / 1000 * float(completion_per_1k or 0)
+    return {
+        "cost": {
+            "currency": "CNY",
+            "prompt_tokens": prompt,
+            "completion_tokens": completion,
+            "prompt": round(prompt_cost, 6),
+            "completion": round(completion_cost, 6),
+            "total": round(prompt_cost + completion_cost, 6),
+        }
+    }
+
+
 def _sanitize_value(key: str, value: Any) -> Any:
     lowered = key.lower()
     if any(bad in lowered for bad in _SENSITIVE_KEYS):

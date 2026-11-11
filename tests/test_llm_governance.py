@@ -126,6 +126,19 @@ class TestTraceRedaction:
         assert len(data["events"][2]["long"]) <= 161
         assert data["trace_id"] == "t1"
 
+    def test_cost_fields_convert_tokens(self):
+        from app.core.trace import cost_fields
+
+        cost = cost_fields(
+            {"prompt_tokens": 1000, "completion_tokens": 500},
+            prompt_per_1k=0.002,
+            completion_per_1k=0.008,
+        )["cost"]
+        assert cost["prompt"] == 0.002
+        assert cost["completion"] == 0.004
+        assert cost["total"] == 0.006
+        assert cost_fields(None, prompt_per_1k=0.002, completion_per_1k=0.008)["cost"]["total"] == 0.0
+
 
 class TestEngineTrace:
     def test_full_pipeline_trace_without_content(self, monkeypatch, settings_factory):
@@ -150,6 +163,7 @@ class TestEngineTrace:
             "request",
             "cache_lookup",
             "intent",
+            "rewrite",
             "route",
             "retrieve",
             "rerank",
@@ -160,7 +174,25 @@ class TestEngineTrace:
             "done",
         ):
             assert required in stages, required
-        assert stages.index("intent") < stages.index("retrieve") < stages.index("generate")
+        assert (
+            stages.index("intent")
+            < stages.index("rewrite")
+            < stages.index("route")
+            < stages.index("retrieve")
+            < stages.index("generate")
+        )
+        # 独立成本字段：intent 与 generate 两个 LLM 阶段都要有
+        for event in trace.events:
+            if event["stage"] in ("intent", "generate"):
+                assert "cost" in event, event["stage"]
+                assert event["cost"]["currency"] == "CNY"
+                assert set(event["cost"]) >= {
+                    "prompt_tokens",
+                    "completion_tokens",
+                    "prompt",
+                    "completion",
+                    "total",
+                }
 
         meta = [f for f in frames if f.startswith("event: meta")][0]
         assert trace.trace_id in meta
@@ -173,7 +205,11 @@ class TestEngineTrace:
     def test_answer_cache_replay_marks_cached(self, monkeypatch, settings_factory):
         from app.orchestration.answer_cache import AnswerCache
 
-        monkeypatch.setattr(stream_mod, "analyze_query", lambda *a, **kw: make_plan("hybrid"))
+        question = "申请支付令需要准备哪些材料"
+        # 缓存键取自改写后的 plan.cache_query，桩 plan 必须与真实问题一致
+        monkeypatch.setattr(
+            stream_mod, "analyze_query", lambda *a, **kw: make_plan("hybrid", query=question)
+        )
         settings = settings_factory(cache_answer_ttl=3600, trace_store_enabled=False)
         cache = AnswerCache(redis=FakeRedis(), settings=settings)
         engine = stream_mod.AnswerEngine(
@@ -184,7 +220,6 @@ class TestEngineTrace:
             settings=settings,
         )
         scope = AccessScope.for_grants([KbGrant(kb_id="kb_labor")], tenant_id="default", user_id=1)
-        question = "申请支付令需要准备哪些材料"
         list(engine.stream(question, scope=scope))
         trace2 = Trace(user_id=1)
         list(engine.stream(question, scope=scope, trace=trace2))

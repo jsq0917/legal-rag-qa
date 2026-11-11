@@ -261,6 +261,10 @@ class Settings(BaseSettings):
     llm_circuit_cooldown_s: int = Field(default=30, ge=1, le=600)
     # 备用模型：生成链路首 token 前失败时改用该模型重试一次；空=不启用
     llm_fallback_model: str = ""
+    # 成本估算单价（人民币元 / 1K tokens），仅写入 trace，不参与计费。
+    # 默认按输入 ¥2/M、输出 ¥8/M（与 2026-11-11 评估口径一致）。
+    llm_cost_prompt_per_1k: float = Field(default=0.002, ge=0)
+    llm_cost_completion_per_1k: float = Field(default=0.008, ge=0)
 
     # ---- Trace ----
     trace_store_enabled: bool = True
