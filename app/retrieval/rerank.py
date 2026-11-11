@@ -16,6 +16,7 @@ from __future__ import annotations
 import threading
 from typing import Protocol, Sequence
 
+from app.core import gpu_guard
 from app.core.logger import get_logger
 from config import Settings, get_settings
 
@@ -60,9 +61,15 @@ class BgeReranker:
         self._model = None
         # 加载锁：与 embedder 同理，防并发首请求双载模型
         self._load_lock = threading.Lock()
-        # 推理锁：共享模型不支持并发 compute_score（Windows 并发 GPU 前向
-        # 会因内存提交超限产出坏结果），GPU 本就串行执行 kernel
-        self._infer_lock = threading.Lock()
+        # 推理锁由 app.core.gpu_guard 统一提供：embed 与 rerank 共用一把，
+        # 避免两个模型同时在 GPU 上前向（实测会触发 CUDA illegal instruction）。
+
+    def _fallback_to_cpu(self) -> None:
+        """GPU 粘性故障后重建为 CPU 模型；本进程不再回切 GPU。"""
+        with self._load_lock:
+            self._model = None
+            self.device = "cpu"
+        logger.error("device=fallback：bge-reranker 模型已降级到 CPU（本进程不再回到 GPU）")
 
     def _resolve_device(self) -> str:
         device = (self.device or "cpu").lower()
@@ -98,16 +105,21 @@ class BgeReranker:
     def score(self, query: str, documents: Sequence[str]) -> list[float]:
         if not documents:
             return []
+        return gpu_guard.run(
+            lambda: self._score_once(query, documents),
+            rebuild=self._fallback_to_cpu,
+        )
+
+    def _score_once(self, query: str, documents: Sequence[str]) -> list[float]:
         model = self._load()
         pairs = [[query, doc[: self.max_text_chars]] for doc in documents]
         scores: list[float] = []
-        with self._infer_lock:
-            for start in range(0, len(pairs), self.batch_size):
-                batch = pairs[start : start + self.batch_size]
-                raw = model.compute_score(batch, normalize=True, max_length=self.max_length)
-                if isinstance(raw, (int, float)):
-                    raw = [raw]
-                scores.extend(float(x) for x in raw)
+        for start in range(0, len(pairs), self.batch_size):
+            batch = pairs[start : start + self.batch_size]
+            raw = model.compute_score(batch, normalize=True, max_length=self.max_length)
+            if isinstance(raw, (int, float)):
+                raw = [raw]
+            scores.extend(float(x) for x in raw)
         return scores
 
 

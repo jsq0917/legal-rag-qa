@@ -47,6 +47,8 @@ _RATE_LIMITED: dict[str, int] = defaultdict(int)
 _PERMISSION_DENIED: dict[str, int] = defaultdict(int)
 #: kind -> count（输出护栏命中：api_key/internal_path/system_prompt 等）
 _GUARDRAIL_HITS: dict[str, int] = defaultdict(int)
+#: reason -> count（GPU 粘性故障降级：异常类型）
+_GPU_FALLBACKS: dict[str, int] = defaultdict(int)
 
 DEPENDENCY_NAMES = ("mysql", "redis", "milvus")
 _DEP_TIMEOUT_S = 2.0
@@ -96,6 +98,12 @@ def record_permission_denied(resource: str) -> None:
     """``resource``：kb_write / document_write / chunk_write / debug_preview 等。"""
     with _LOCK:
         _PERMISSION_DENIED[resource or "unknown"] += 1
+
+
+def record_gpu_fallback(reason: str) -> None:
+    """GPU 粘性故障降级到 CPU；``reason`` 为异常类型名。"""
+    with _LOCK:
+        _GPU_FALLBACKS[reason or "unknown"] += 1
 
 
 # ---------------------------------------------------------------------------
@@ -280,6 +288,7 @@ def render_prometheus(
         rate_limited = dict(_RATE_LIMITED)
         permission_denied = dict(_PERMISSION_DENIED)
         guardrail_hits = dict(_GUARDRAIL_HITS)
+        gpu_fallbacks = dict(_GPU_FALLBACKS)
 
     lines: list[str] = []
     _family(lines, "lawanswer_http_requests_total", "counter", "HTTP requests by method, route and status.")
@@ -339,6 +348,15 @@ def render_prometheus(
     for kind, count in sorted(guardrail_hits.items()):
         lines.append(f"lawanswer_guardrail_hits_total{_labels({'kind': kind})} {count}")
 
+    _family(
+        lines,
+        "lawanswer_gpu_fallbacks_total",
+        "counter",
+        "Sticky GPU failures that forced a one-way CPU fallback, by exception type.",
+    )
+    for reason, count in sorted(gpu_fallbacks.items()):
+        lines.append(f"lawanswer_gpu_fallbacks_total{_labels({'reason': reason})} {count}")
+
     if dependencies is not None:
         _family(lines, "lawanswer_dependency_up", "gauge", "Dependency health (1=ok, 0=down).")
         for name in DEPENDENCY_NAMES:
@@ -389,6 +407,7 @@ def reset_metrics() -> None:
         _RATE_LIMITED.clear()
         _PERMISSION_DENIED.clear()
         _GUARDRAIL_HITS.clear()
+        _GPU_FALLBACKS.clear()
     with _dep_lock:
         _dep_cached = {}
         _dep_cached_at = 0.0

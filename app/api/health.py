@@ -11,6 +11,7 @@ from datetime import datetime
 
 from fastapi import APIRouter
 
+from app.core import gpu_guard
 from app.core.logger import current_request_id
 from app.db.milvus_client import check_milvus
 from app.db.mysql import check_mysql
@@ -56,6 +57,8 @@ async def health() -> dict:
         "llm_key_source": get_llm_api_key_env() or None,
         "llm_base_url": settings.llm_base_url,
         "llm_model": settings.llm_default_model,
+        # GPU 粘性故障后进程级降级到 CPU；响应显式标注，避免把 CPU 延迟误判为退化
+        "inference_device": "fallback" if gpu_guard.is_poisoned() else "primary",
         "services": services,
     }
 
