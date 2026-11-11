@@ -271,6 +271,7 @@ class AnswerEngine:
                     cache_query,
                     history=list(history) if history else None,
                     cache_identity=identity,
+                    raw_query=query,
                 )
                 if cache_eligible
                 else None

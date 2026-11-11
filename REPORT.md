@@ -481,6 +481,10 @@ MySQL 落 1 个文档、8 个父块、8 个子块，Milvus `law_chunks` 中 `kb_
 8. **CLI 同名文件改内容会新增文档**：`ingest_file` 按 `content_sha1` 识别增量，内容变化且未传 `doc_id`
    时会新建一条文档而不是复用旧文档（上传接口传了 `doc_id`，不受影响）。本次已手工删除旧文档收敛为
    1 份，代码未改。
+9. **多轮追问多数不生成答案缓存键**：真实链路里「那如果是我主动辞职呢？」这类追问常被拆成多个子查询，
+   有历史时按设计不读不写答案缓存（`plan.cache_query` 为空）；因此跨上下文误命中的窗口主要在
+   「新会话单问」。`eval/results/multiturn_cache_probe.json` 的阳性对照（同会话原样重复提问）能命中，
+   新会话同一句追问因改写结果不同而不命中。
 
 ### 9.4 复现命令与产物
 
@@ -496,6 +500,10 @@ uv run python -m app.eval.multiturn_eval --identity scoped --out eval/results/mt
 $env:EMBEDDING_DEVICE='cpu'
 uv run python -m app.eval.multiturn_eval --mode live --identity scoped --out eval/results/mt_live_scoped.json
 uv run python -m app.eval.multiturn_eval --mode live --identity legacy --out eval/results/mt_live_legacy.json
+
+# 多轮缓存真实链路探针（N1：追问在新会话/不同上下文是否误命中，走 AnswerEngine）
+$env:EMBEDDING_DEVICE='cpu'
+uv run python scripts/verify_multiturn_cache.py --out eval/results/multiturn_cache_probe.json
 
 # 提示注入（fixture；live 必须显式限条数）
 uv run python -m app.eval.injection_eval --out eval/results/injection_fixture.json

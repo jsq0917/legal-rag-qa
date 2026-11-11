@@ -207,6 +207,20 @@ class TestHistoryGate:
         ]
         assert cache.lookup(QUESTION, history=history) is None
 
+    def test_rewritten_key_matches_raw_question_in_history(self, cache):
+        """改写后的键与历史原话不完全一致时，用原话判断"确实问过"。"""
+        rewritten = "高温津贴发放标准"
+        raw = "高温津贴的发放标准是什么？"
+        cache.store(rewritten, answer=LONG_ANSWER, route="hybrid")
+        history = [
+            {"role": "user", "content": raw},
+            {"role": "assistant", "content": "（上次的回答）"},
+        ]
+        # 只拿改写键比历史：归一化后不同 → 漏命中
+        assert cache.lookup(rewritten, history=history) is None
+        # 带上原话：命中
+        assert cache.lookup(rewritten, history=history, raw_query=raw) is not None
+
 
 # ---------------------------------------------------------------------------
 # 4. 与 AnswerEngine 的集成：第二次提问必须秒答

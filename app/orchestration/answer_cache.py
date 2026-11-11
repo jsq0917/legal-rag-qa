@@ -187,11 +187,15 @@ class AnswerCache:
         *,
         history: list[dict] | None = None,
         cache_identity: str = "",
+        raw_query: str | None = None,
     ) -> CachedAnswer | None:
         """命中返回快照，否则 None（None 即"照常走完整链路"，不是错误）。
 
         ``cache_identity`` 必须与写入时一致：租户/知识库/语料版本/模型/
         prompt/as-of 任一变化都视为不同问题，旧缓存自然不可达。
+
+        ``query`` 是独立化改写后的缓存键；``raw_query`` 是用户原话。多轮"确实
+        重复问过"的判定要拿原话比历史（改写会精简措辞，键与历史对不上会漏命中）。
         """
         if not self.settings.cache_answer_enabled:
             return None
@@ -205,7 +209,13 @@ class AnswerCache:
         if not is_self_contained(query):
             return None
         # 多轮对话：只有"历史上确实问过同一句"才算重复提问
-        if history and not _repeated_in_history(norm, history):
+        if history and not (
+            _repeated_in_history(norm, history)
+            or (
+                raw_query
+                and _repeated_in_history(normalize_question(raw_query), history)
+            )
+        ):
             return None
 
         try:
