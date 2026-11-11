@@ -282,6 +282,13 @@ class Settings(BaseSettings):
         le=30 * 86400,
         description="意图识别结果 Redis 缓存 TTL（秒）；0 关闭。只缓存无历史问题的 LLM 成功结果",
     )
+    intent_decompose_second_opinion: bool = Field(
+        default=True,
+        description=(
+            "首拆判 direct/hyde 但问句带第二处诉求信号时，补一次拆解调用（多花一次 "
+            "意图 LLM 调用，只影响命中信号的问题）。关掉即回到单次意图识别"
+        ),
+    )
 
     # ---- Embedding / Rerank ----
     embedding_model_path: str = (

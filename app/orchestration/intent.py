@@ -37,7 +37,10 @@ from config import Settings, get_llm_api_key, get_settings
 logger = get_logger("lawanswer.intent")
 
 #: 意图 prompt 版本：模板或字段语义变化时 +1，旧意图缓存随之失效。
-INTENT_PROMPT_VERSION = "2026-11-11.1"
+INTENT_PROMPT_VERSION = "2026-11-11.2"
+
+#: 复杂度序（二次拆解只允许抬高复杂度，不允许压低——压低会缩小最终 topK）
+_COMPLEXITY_ORDER: dict[str, int] = {"simple": 0, "medium": 1, "complex": 2}
 
 #: 一次 LLM 调用同时产出 6 类信息的 system prompt（设计方案 §6.1）
 INTENT_SYSTEM_PROMPT = """你是法律问答系统的「意图识别与查询改写」模块。根据用户问题（可附最近对话历史），一次性输出 JSON 对象。只输出 JSON，不要输出解释、不要用 Markdown 代码块。
@@ -67,6 +70,20 @@ INTENT_SYSTEM_PROMPT = """你是法律问答系统的「意图识别与查询改
 - hit_structured：**仅当问题命中上述 12 个劳动法高频话题之一且用户在问该话题本身的规定/标准/计算时 → true** 并给出 topic。民法典问题（婚姻、继承、物权、租赁等）即使涉及"合同"字样也一律 false——12 个话题全部对齐劳动法问答库，civil 问题没有结构化答案可回放。拿不准 → false。
 - law_hints：从「中华人民共和国劳动合同法、中华人民共和国劳动法、中华人民共和国民法典、工伤保险条例、中华人民共和国劳动争议调解仲裁法、中华人民共和国劳动合同法实施条例、职工带薪年休假条例」中选 1-3 部（按问题实际涉及的法域选，不要只选劳动合同法）。对应关系：工伤认定/待遇/伤残补助/工亡 → 工伤保险条例；仲裁时效/受理/裁决/终局裁决/举证 → 中华人民共和国劳动争议调解仲裁法；二倍工资起算/经济补偿月工资口径/无固定期限合同细则 → 中华人民共和国劳动合同法实施条例；年休假天数/未休补偿 → 职工带薪年休假条例。跨法域可选 2-3 部（如工伤且未缴社保 → 工伤保险条例 + 中华人民共和国劳动合同法）。greeting/other 输出 []。
 - need_history：是否需要结合对话历史才能理解 → true/false。"""
+
+#: 二次拆解专用 prompt：只在首拆判非 decompose、且问句带"第二处诉求"信号时调用。
+#: 不把拆解细则并进主 prompt——主 prompt 改动会波及已经正确拆解的样本
+#: （多跳定点：q84 子查询被改写后，正确法条从第 5 位掉到第 10 位，@8 由 1.0 掉到 0.5）。
+DECOMPOSE_SECOND_PROMPT = """你是法律问答系统的「多诉求拆解」模块。用户的一个问句里可能含两处以上独立的法律诉求，必须分别检索不同法条才答得全。
+
+只输出 JSON，不要解释、不要用 Markdown 代码块：
+{"sub_queries": ["2-3 条检索用查询"], "complexity": "simple | medium | complex"}
+
+规则：
+- 每条子查询对准**一处独立规定**（不同法条或不同法律），写成语义完整的术语化问句，保留金额、时长、伤残等级等关键实体，能独立读懂；
+- 不要把同一个诉求拆成两句同义改写：两条子查询必须指向不同条文；
+- 全句只有一处诉求（其余成分只是时间、在职状态、金额等背景事实）→ 返回 {"sub_queries": []}；
+- complexity：单点短问 simple；含条件/多要素 medium；跨条且要按工资、年限、伤残等级套公式算金额 complex。"""
 
 
 def _format_history(history: Sequence[dict] | None, max_turns: int) -> str:
@@ -225,6 +242,65 @@ def _recognize_via_llm(
         )
     result = _validate(data, query)
     return replace(result, token_usage=dict(resp.usage or {}), latency_ms=int(resp.latency_ms or 0))
+
+
+def _second_decompose(
+    query: str,
+    *,
+    client: LLMClient,
+    base: IntentResult,
+    settings: Settings,
+) -> IntentResult:
+    """对首拆未拆但疑似含第二处诉求的问句补一次拆解调用。
+
+    与"改主 prompt"的区别：未命中触发信号的问题**一次都不多调**，已正确拆解的
+    样本也不会被改写子查询措辞，爆炸半径只等于触发集合。任何异常都沿用首拆
+    结果——二次调用只是加分项，不能让整次意图识别降级。
+    """
+    from app.orchestration.intent_rules import needs_second_decompose
+
+    if not getattr(settings, "intent_decompose_second_opinion", False):
+        return base
+    if base.rewrite_type == "decompose" or not needs_second_decompose(query):
+        return base
+    try:
+        resp = client.chat(
+            [
+                {"role": "system", "content": DECOMPOSE_SECOND_PROMPT},
+                {"role": "user", "content": f"【用户问题】\n{query.strip()}"},
+            ],
+            json_mode=True,
+            temperature=0.1,
+        )
+        data = json.loads(_strip_json_fences(resp.content))
+    except Exception as exc:  # noqa: BLE001 - 二次拆解失败不影响首拆结果
+        logger.warning("二次拆解失败（沿用首拆）：%s: %s", type(exc).__name__, str(exc)[:120])
+        return base
+    if not isinstance(data, dict):
+        return base
+    # 传空 query 作兜底值：空数组表示"判定不需要拆"，不能回填成原句
+    subs = _coerce_sub_queries(data.get("sub_queries"), "")
+    if len(subs) < 2:
+        logger.info("二次拆解：判为单诉求，沿用首拆 rewrite=%s", base.rewrite_type)
+        return base
+
+    complexity = data.get("complexity")
+    # 只允许抬高、不允许压低：压低会让最终 topK 变小，直接吃掉召回
+    if complexity not in COMPLEXITIES or _COMPLEXITY_ORDER[complexity] <= _COMPLEXITY_ORDER.get(
+        base.complexity, 1
+    ):
+        complexity = base.complexity
+    logger.info(
+        "二次拆解：%d 条子查询，complexity %s→%s",
+        len(subs), base.complexity, complexity,
+    )
+    return replace(
+        base,
+        rewrite_type="decompose",
+        sub_queries=subs,
+        complexity=complexity,
+        raw={**(base.raw or {}), "second_decompose": data},
+    )
 
 
 def _build_intent_client(
@@ -426,6 +502,8 @@ def recognize_intent(
             result.structured_topic,
             elapsed,
         )
+        # 1.5) 二次拆解：首拆没拆、但问句有第二处诉求信号时补一次拆解调用
+        result = _second_decompose(query, client=llm, base=result, settings=s)
         if use_cache:
             _intent_cache_put(query, result, s)
         return result

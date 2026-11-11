@@ -431,3 +431,101 @@ class TestIntentCache:
         recognize_intent("劳务派遣合同怎么签", settings=s)
         assert len(fake_redis.store) == 0
         assert len(fake_llm.calls) == 2
+
+
+class SequencedClient:
+    """按调用顺序返回不同内容，用于测「二次拆解」这第二次调用。"""
+
+    def __init__(self, contents: list[str], exc: Exception | None = None, fail_at: int = 99) -> None:
+        self.contents = contents
+        self.exc = exc
+        self.fail_at = fail_at
+        self.calls: list[dict] = []
+
+    def chat(self, messages, **kwargs):
+        self.calls.append({"messages": messages, **kwargs})
+        if self.exc is not None and len(self.calls) >= self.fail_at:
+            raise self.exc
+        return _llm_response(self.contents[min(len(self.calls) - 1, len(self.contents) - 1)])
+
+
+class TestSecondDecompose:
+    """首拆没拆、但问句带第二处诉求信号时，补一次拆解调用。"""
+
+    QUERY = "公司拖欠工资，我能不能直接走人还要补偿？"
+
+    def _settings(self, enabled: bool = True):
+        from types import SimpleNamespace
+
+        return SimpleNamespace(
+            intent_decompose_second_opinion=enabled,
+            intent_history_turns=2,
+        )
+
+    @staticmethod
+    def _first(complexity: str = "medium", rewrite_type: str = "direct") -> str:
+        payload = json.loads(VALID_JSON)
+        payload["complexity"] = complexity
+        payload["rewrite_type"] = rewrite_type
+        return json.dumps(payload, ensure_ascii=False)
+
+    def test_two_subs_promote_to_decompose(self):
+        second = json.dumps(
+            {
+                "sub_queries": [
+                    "用人单位未及时足额支付劳动报酬，劳动者能否解除劳动合同并要求经济补偿",
+                    "用人单位拖欠工资的法律责任与赔偿标准",
+                ],
+                "complexity": "medium",
+            },
+            ensure_ascii=False,
+        )
+        client = SequencedClient([self._first(), second])
+        result = recognize_intent(self.QUERY, client=client, settings=self._settings())
+        assert len(client.calls) == 2
+        assert result.rewrite_type == "decompose"
+        assert len(result.sub_queries) == 2
+        # 第二次调用用的是拆解专用 prompt，不是主 prompt
+        assert client.calls[1]["messages"][0]["content"] != INTENT_SYSTEM_PROMPT
+
+    def test_empty_subs_keeps_first_result(self):
+        client = SequencedClient([self._first(), json.dumps({"sub_queries": []}, ensure_ascii=False)])
+        result = recognize_intent(self.QUERY, client=client, settings=self._settings())
+        assert len(client.calls) == 2
+        assert result.rewrite_type == "direct"
+        assert result.sub_queries == ["试用期最长期限"]
+
+    def test_second_call_failure_keeps_first_result(self):
+        client = SequencedClient([self._first()], exc=TimeoutError("read timeout"), fail_at=2)
+        result = recognize_intent(self.QUERY, client=client, settings=self._settings())
+        assert result.source == "llm"
+        assert result.rewrite_type == "direct"
+
+    def test_lower_complexity_ignored(self):
+        """二次拆解只能抬高复杂度：压低会缩小最终 topK，直接吃掉召回。"""
+        second = json.dumps(
+            {"sub_queries": ["a 诉求", "b 诉求"], "complexity": "simple"},
+            ensure_ascii=False,
+        )
+        client = SequencedClient([self._first("medium"), second])
+        result = recognize_intent(self.QUERY, client=client, settings=self._settings())
+        assert result.rewrite_type == "decompose"
+        assert result.complexity == "medium"
+
+    def test_no_signal_skips_second_call(self):
+        client = SequencedClient([self._first()])
+        result = recognize_intent("试用期最长可以约定多久", client=client, settings=self._settings())
+        assert len(client.calls) == 1
+        assert result.rewrite_type == "direct"
+
+    def test_already_decompose_skips_second_call(self):
+        client = SequencedClient([self._first("complex", "decompose")])
+        result = recognize_intent(self.QUERY, client=client, settings=self._settings())
+        assert len(client.calls) == 1
+        assert result.rewrite_type == "decompose"
+
+    def test_disabled_by_config(self):
+        client = SequencedClient([self._first()])
+        result = recognize_intent(self.QUERY, client=client, settings=self._settings(False))
+        assert len(client.calls) == 1
+        assert result.rewrite_type == "direct"

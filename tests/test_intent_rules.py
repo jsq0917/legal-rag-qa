@@ -244,3 +244,36 @@ class TestMultiIssue:
         from app.orchestration.intent_rules import is_multi_issue
 
         assert is_multi_issue(query) is False
+
+
+class TestNeedsSecondDecompose:
+    """二次拆解触发：窄口径，只认"第二处诉求/救济"的显式措辞。"""
+
+    @pytest.mark.parametrize(
+        "query",
+        [
+            "公司拖欠工资，我能不能直接走人还要补偿？",
+            "怀孕期间被公司辞退，我能主张什么？",
+            "用人单位对终局裁决不服，能向法院申请撤销吗？",
+            "未签合同的二倍工资怎么算？仲裁时效多久？",
+        ],
+    )
+    def test_triggered(self, query):
+        from app.orchestration.intent_rules import needs_second_decompose
+
+        assert needs_second_decompose(query) is True
+
+    @pytest.mark.parametrize(
+        "query",
+        [
+            "公司拖欠工资两年了，劳动关系还在，仲裁时效过了吗？",  # 裸"还"不算第二诉求
+            "签了竞业限制但没约定补偿，离职后还要遵守吗？",  # "还要"+动词，不是诉求
+            "公司解除劳动合同时出具的证明应当写清楚哪些内容？",  # "合同时"不是连接词
+            "试用期两个月、月薪 8000，公司说我不符合录用条件把我辞了，能拿多少钱？",
+            "",
+        ],
+    )
+    def test_not_triggered(self, query):
+        from app.orchestration.intent_rules import needs_second_decompose
+
+        assert needs_second_decompose(query) is False

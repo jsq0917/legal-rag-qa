@@ -1,0 +1,16 @@
+{
+  "model": null,
+  "note": "单价为假设价，实际以百炼账单为准",
+  "cases": 4,
+  "llm_calls": 8,
+  "prompt_tokens": 4392,
+  "completion_tokens": 500,
+  "cost_cny_estimate": 0.012784,
+  "elapsed_s": 8.9,
+  "ids": [
+    "q20",
+    "q21",
+    "q26",
+    "q77"
+  ]
+}

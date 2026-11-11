@@ -177,6 +177,33 @@ def is_multi_issue(query: str) -> bool:
     return any(c in q for c in MULTI_ISSUE_CONNECTORS)
 
 
+#: 二次拆解触发信号：只在「第二处诉求/救济」有显式措辞时才值得再发一次拆解调用。
+#: 必须收窄到"连接词 + 诉求名词"，不能沿用 :data:`MULTI_ISSUE_CONNECTORS` 的裸
+#: 单字「还」——"劳动关系还在""离职后还要遵守吗"只有一个诉求，误触发会把单跳
+#: 问句改成多路检索，反而丢召回（多跳定点：q75 由 1.0 掉到 0.5）。
+_SECOND_DEMAND_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"(?:还要|还不|还有|另外|而且|并且)(?:补偿|赔偿|钱|主张|要求|权利|责任|待遇)"),
+    re.compile(r"同时(?:主张|要求|获得|追究|起诉|承担)"),
+    re.compile(r"主张(?:什么|哪些)|(?:哪些|什么)(?:赔偿|权利|钱)"),
+    re.compile(r"申请撤销"),
+)
+
+
+def needs_second_decompose(query: str) -> bool:
+    """单句是否疑似含两处以上诉求，值得再发一次拆解调用（仅首拆未拆时使用）。
+
+    与 :func:`is_multi_issue` 的分工：后者判"要不要放大检索配额"，取宽口径；
+    本函数判"要不要再花一次 LLM 调用重拆"，取窄口径——宁可漏拆也不误拆，
+    因为重拆会换掉检索入口，代价比放大 topK 大得多。
+    """
+    q = (query or "").strip()
+    if not q:
+        return False
+    if q.count("？") + q.count("?") > 1:
+        return True
+    return any(p.search(q) for p in _SECOND_DEMAND_PATTERNS)
+
+
 def rule_rewrite_type(query: str, history: list[dict] | None = None) -> str:
     """有指代词 → history；其余 → direct（与 §6.1 兜底表一致）。"""
     text = normalize_query(query)

@@ -1,0 +1,1320 @@
+{
+  "q01": {
+    "sub_queries": [
+      "试用期最长可以约定多久"
+    ],
+    "rewrite_type": "direct",
+    "complexity": "simple",
+    "law_hints": [
+      "中华人民共和国劳动合同法"
+    ]
+  },
+  "q02": {
+    "sub_queries": [
+      "试用期工资最低标准是多少"
+    ],
+    "rewrite_type": "direct",
+    "complexity": "simple",
+    "law_hints": [
+      "中华人民共和国劳动合同法"
+    ]
+  },
+  "q03": {
+    "sub_queries": [
+      "平时加班、休息日加班、法定节假日加班的加班费分别按几倍工资支付"
+    ],
+    "rewrite_type": "direct",
+    "complexity": "simple",
+    "law_hints": [
+      "中华人民共和国劳动法",
+      "中华人民共和国劳动合同法"
+    ]
+  },
+  "q04": {
+    "sub_queries": [
+      "劳动法对每日加班时长上限的规定"
+    ],
+    "rewrite_type": "direct",
+    "complexity": "simple",
+    "law_hints": [
+      "中华人民共和国劳动法",
+      "中华人民共和国劳动合同法"
+    ]
+  },
+  "q05": {
+    "sub_queries": [
+      "竞业限制期限最长不得超过几年"
+    ],
+    "rewrite_type": "direct",
+    "complexity": "simple",
+    "law_hints": [
+      "中华人民共和国劳动合同法"
+    ]
+  },
+  "q06": {
+    "sub_queries": [
+      "劳动者主动辞职需要提前多久通知用人单位"
+    ],
+    "rewrite_type": "direct",
+    "complexity": "simple",
+    "law_hints": [
+      "中华人民共和国劳动合同法"
+    ]
+  },
+  "q07": {
+    "sub_queries": [
+      "用人单位拖欠工资，劳动者除要求补发工资外，能否主张加付赔偿金或经济补偿"
+    ],
+    "rewrite_type": "hyde",
+    "complexity": "medium",
+    "law_hints": [
+      "中华人民共和国劳动合同法",
+      "中华人民共和国劳动法"
+    ]
+  },
+  "q08": {
+    "sub_queries": [
+      "用人单位自用工之日起超过一个月不满一年未与劳动者订立书面劳动合同的二倍工资如何计算"
+    ],
+    "rewrite_type": "direct",
+    "complexity": "medium",
+    "law_hints": [
+      "中华人民共和国劳动合同法",
+      "中华人民共和国劳动合同法实施条例"
+    ]
+  },
+  "q09": {
+    "sub_queries": [
+      "用人单位应当订立无固定期限劳动合同的法定情形"
+    ],
+    "rewrite_type": "direct",
+    "complexity": "medium",
+    "law_hints": [
+      "中华人民共和国劳动合同法",
+      "中华人民共和国劳动合同法实施条例"
+    ]
+  },
+  "q10": {
+    "sub_queries": [
+      "用人单位不得解除劳动合同的情形 劳动合同法第四十二条"
+    ],
+    "rewrite_type": "direct",
+    "complexity": "medium",
+    "law_hints": [
+      "中华人民共和国劳动合同法"
+    ]
+  },
+  "q11": {
+    "sub_queries": [
+      "自然人之间借款未约定利息，出借人能否主张利息"
+    ],
+    "rewrite_type": "direct",
+    "complexity": "simple",
+    "law_hints": [
+      "中华人民共和国民法典"
+    ]
+  },
+  "q12": {
+    "sub_queries": [
+      "房屋租赁合同的最长期限是多少年"
+    ],
+    "rewrite_type": "direct",
+    "complexity": "simple",
+    "law_hints": [
+      "中华人民共和国民法典"
+    ]
+  },
+  "q13": {
+    "sub_queries": [
+      "法定继承的继承顺序：配偶、子女、父母等继承人的顺位及遗产分配规则"
+    ],
+    "rewrite_type": "hyde",
+    "complexity": "simple",
+    "law_hints": [
+      "中华人民共和国民法典"
+    ]
+  },
+  "q14": {
+    "sub_queries": [
+      "普通民事纠纷的诉讼时效期间是几年"
+    ],
+    "rewrite_type": "direct",
+    "complexity": "simple",
+    "law_hints": [
+      "中华人民共和国民法典"
+    ]
+  },
+  "q15": {
+    "sub_queries": [
+      "职工带薪年休假的天数如何根据累计工作年限计算"
+    ],
+    "rewrite_type": "direct",
+    "complexity": "simple",
+    "law_hints": [
+      "职工带薪年休假条例"
+    ]
+  },
+  "q16": {
+    "sub_queries": [
+      "试用期以不符合录用条件解除劳动合同是否有经济补偿"
+    ],
+    "rewrite_type": "direct",
+    "complexity": "medium",
+    "law_hints": [
+      "中华人民共和国劳动合同法"
+    ]
+  },
+  "q17": {
+    "sub_queries": [
+      "用人单位未提前三十日书面通知解除劳动合同，是否需额外支付一个月工资（代通知金）",
+      "违法解除劳动合同的赔偿金与经济补偿能否同时主张",
+      "劳动合同法第四十条、第八十七条关于解除劳动合同经济补偿与赔偿金的规定"
+    ],
+    "rewrite_type": "decompose",
+    "complexity": "medium",
+    "law_hints": [
+      "中华人民共和国劳动合同法",
+      "中华人民共和国劳动合同法实施条例"
+    ]
+  },
+  "q18": {
+    "sub_queries": [
+      "违法解除劳动合同赔偿金的计算标准（经济补偿标准的二倍）",
+      "经济补偿N的计算方式：工作年限与月工资口径",
+      "赔偿金2N与经济补偿N的关系及能否同时主张"
+    ],
+    "rewrite_type": "decompose",
+    "complexity": "medium",
+    "law_hints": [
+      "中华人民共和国劳动合同法",
+      "中华人民共和国劳动合同法实施条例"
+    ]
+  },
+  "q19": {
+    "sub_queries": [
+      "竞业限制条款 用人单位未支付经济补偿 劳动者是否仍需履行竞业限制义务"
+    ],
+    "rewrite_type": "direct",
+    "complexity": "medium",
+    "law_hints": [
+      "中华人民共和国劳动合同法"
+    ]
+  },
+  "q20": {
+    "sub_queries": [
+      "用人单位未及时足额支付劳动报酬，劳动者能否单方解除劳动合同",
+      "劳动者因用人单位拖欠工资解除劳动合同，能否主张经济补偿金及计算标准"
+    ],
+    "rewrite_type": "decompose",
+    "complexity": "medium",
+    "law_hints": [
+      "中华人民共和国劳动合同法"
+    ]
+  },
+  "q21": {
+    "sub_queries": [
+      "用人单位在女职工怀孕期间解除劳动合同的法律后果和赔偿标准是什么",
+      "违法解除劳动合同的赔偿金如何计算（经济补偿标准的二倍）"
+    ],
+    "rewrite_type": "decompose",
+    "complexity": "medium",
+    "law_hints": [
+      "中华人民共和国劳动合同法",
+      "中华人民共和国劳动法"
+    ]
+  },
+  "q22": {
+    "sub_queries": [
+      "劳动合同到期公司不续签是否需要支付经济补偿"
+    ],
+    "rewrite_type": "direct",
+    "complexity": "simple",
+    "law_hints": [
+      "中华人民共和国劳动合同法"
+    ]
+  },
+  "q23": {
+    "sub_queries": [
+      "劳务派遣员工被用工单位退回后，派遣单位能否直接解除劳动合同"
+    ],
+    "rewrite_type": "direct",
+    "complexity": "medium",
+    "law_hints": [
+      "中华人民共和国劳动合同法",
+      "中华人民共和国劳动合同法实施条例"
+    ]
+  },
+  "q24": {
+    "sub_queries": [
+      "用人单位安排996超时加班且不支付加班费，劳动者能否据此解除劳动合同",
+      "用人单位未及时足额支付加班费，劳动者解除劳动合同能否主张经济补偿金"
+    ],
+    "rewrite_type": "decompose",
+    "complexity": "medium",
+    "law_hints": [
+      "中华人民共和国劳动合同法",
+      "中华人民共和国劳动法"
+    ]
+  },
+  "q25": {
+    "sub_queries": [
+      "劳动合同未约定试用期，口头约定试用期三个月是否有效"
+    ],
+    "rewrite_type": "direct",
+    "complexity": "simple",
+    "law_hints": [
+      "中华人民共和国劳动合同法"
+    ]
+  },
+  "q26": {
+    "sub_queries": [
+      "租赁合同到期或解除后房东无正当理由不退押金，承租人能否要求返还押金及利息的法律依据",
+      "租赁期间房东擅自更换门锁妨碍承租人正常使用房屋，承租人能否主张继续履行、赔偿损失或解除合同的法律依据"
+    ],
+    "rewrite_type": "decompose",
+    "complexity": "medium",
+    "law_hints": [
+      "中华人民共和国民法典"
+    ]
+  },
+  "q27": {
+    "sub_queries": [
+      "婚前一方购买、婚后共同还贷的房产，离婚时如何分割及补偿"
+    ],
+    "rewrite_type": "direct",
+    "complexity": "medium",
+    "law_hints": [
+      "中华人民共和国民法典"
+    ]
+  },
+  "q28": {
+    "sub_queries": [
+      "公司裁员经济补偿金的计算标准与月工资口径",
+      "经济补偿金的计算年限是否包含试用期工作时间"
+    ],
+    "rewrite_type": "decompose",
+    "complexity": "medium",
+    "law_hints": [
+      "中华人民共和国劳动合同法",
+      "中华人民共和国劳动合同法实施条例"
+    ]
+  },
+  "q29": {
+    "sub_queries": [
+      "违法解除劳动合同赔偿金计算标准：工作3年7个月、月薪2万元应得多少赔偿金"
+    ],
+    "rewrite_type": "direct",
+    "complexity": "complex",
+    "law_hints": [
+      "中华人民共和国劳动合同法",
+      "中华人民共和国劳动合同法实施条例"
+    ]
+  },
+  "q30": {
+    "sub_queries": [
+      "试用期两个月月薪8000元，公司以不符合录用条件解除劳动合同，劳动者能获得多少赔偿或补偿"
+    ],
+    "rewrite_type": "direct",
+    "complexity": "medium",
+    "law_hints": [
+      "中华人民共和国劳动合同法",
+      "中华人民共和国劳动合同法实施条例"
+    ]
+  },
+  "q31": {
+    "sub_queries": [
+      "用人单位拖欠工资，劳动者可以主张哪些权利，能否解除劳动合同并要求经济补偿",
+      "用人单位未依法缴纳社会保险费，劳动者可以主张哪些权利，能否要求补缴或解除劳动合同"
+    ],
+    "rewrite_type": "decompose",
+    "complexity": "complex",
+    "law_hints": [
+      "中华人民共和国劳动合同法",
+      "中华人民共和国劳动法"
+    ]
+  },
+  "q32": {
+    "sub_queries": [
+      "劳动合同约定离职后3年内不得从事同行业是否有效 竞业限制期限"
+    ],
+    "rewrite_type": "direct",
+    "complexity": "simple",
+    "law_hints": [
+      "中华人民共和国劳动合同法"
+    ]
+  },
+  "q33": {
+    "sub_queries": [
+      "用人单位以最低工资标准作为加班费计算基数是否合法"
+    ],
+    "rewrite_type": "direct",
+    "complexity": "simple",
+    "law_hints": [
+      "中华人民共和国劳动法",
+      "中华人民共和国劳动合同法"
+    ]
+  },
+  "q34": {
+    "sub_queries": [
+      "民法典 违约金过高 调整规则 认定标准",
+      "劳动合同 违约金 适用范围 限制",
+      "劳动合同违约金 能否适用民法典违约金调整规则"
+    ],
+    "rewrite_type": "decompose",
+    "complexity": "complex",
+    "law_hints": [
+      "中华人民共和国民法典",
+      "中华人民共和国劳动合同法"
+    ]
+  },
+  "q35": {
+    "sub_queries": [
+      "用人单位未依法缴纳工伤保险费，职工发生工伤的工伤保险待遇由谁承担",
+      "未参保单位职工工伤赔偿责任主体及工伤保险待遇支付规定"
+    ],
+    "rewrite_type": "decompose",
+    "complexity": "medium",
+    "law_hints": [
+      "工伤保险条例",
+      "中华人民共和国劳动合同法"
+    ]
+  },
+  "q36": {
+    "sub_queries": [
+      "离婚时虚拟货币等数字资产如何分割"
+    ],
+    "rewrite_type": "direct",
+    "complexity": "medium",
+    "law_hints": [
+      "中华人民共和国民法典"
+    ]
+  },
+  "q37": {
+    "sub_queries": [
+      "用人单位在工作场所安装软件监控员工电脑屏幕是否侵犯劳动者隐私权，是否合法"
+    ],
+    "rewrite_type": "hyde",
+    "complexity": "medium",
+    "law_hints": [
+      "中华人民共和国劳动合同法",
+      "中华人民共和国民法典"
+    ]
+  },
+  "q38": {
+    "sub_queries": [
+      "外卖骑手与平台之间劳动关系认定及平台算法罚款的合法性，骑手能否直接向法院起诉平台"
+    ],
+    "rewrite_type": "hyde",
+    "complexity": "medium",
+    "law_hints": [
+      "中华人民共和国劳动合同法",
+      "中华人民共和国劳动争议调解仲裁法"
+    ]
+  },
+  "q39": {
+    "sub_queries": [
+      "网络主播偷逃税的法律责任 行政处罚与刑事责任"
+    ],
+    "rewrite_type": "direct",
+    "complexity": "medium",
+    "law_hints": [
+      "中华人民共和国劳动合同法",
+      "中华人民共和国劳动法",
+      "中华人民共和国民法典"
+    ]
+  },
+  "q40": {
+    "sub_queries": [
+      "中国公司在境外雇佣当地员工是否适用中国劳动法",
+      "涉外劳动关系法律适用 境外用工 当地法律"
+    ],
+    "rewrite_type": "direct",
+    "complexity": "medium",
+    "law_hints": [
+      "中华人民共和国劳动合同法",
+      "中华人民共和国劳动法"
+    ]
+  },
+  "q41": {
+    "sub_queries": [
+      "累计工作满12年的职工年休假天数"
+    ],
+    "rewrite_type": "direct",
+    "complexity": "simple",
+    "law_hints": [
+      "职工带薪年休假条例"
+    ]
+  },
+  "q42": {
+    "sub_queries": [
+      "用人单位未安排职工休年休假且未支付未休年休假工资报酬的，应按什么标准支付"
+    ],
+    "rewrite_type": "direct",
+    "complexity": "simple",
+    "law_hints": [
+      "职工带薪年休假条例",
+      "中华人民共和国劳动合同法"
+    ]
+  },
+  "q43": {
+    "sub_queries": [
+      "职工不享受当年年休假的情形"
+    ],
+    "rewrite_type": "direct",
+    "complexity": "simple",
+    "law_hints": [
+      "职工带薪年休假条例"
+    ]
+  },
+  "q44": {
+    "sub_queries": [
+      "入职半年能否享受带薪年休假 职工带薪年休假条例"
+    ],
+    "rewrite_type": "direct",
+    "complexity": "simple",
+    "law_hints": [
+      "职工带薪年休假条例",
+      "中华人民共和国劳动合同法"
+    ]
+  },
+  "q45": {
+    "sub_queries": [
+      "工伤停工留薪期的期限规定是多久"
+    ],
+    "rewrite_type": "direct",
+    "complexity": "simple",
+    "law_hints": [
+      "工伤保险条例"
+    ]
+  },
+  "q46": {
+    "sub_queries": [
+      "用人单位申请工伤认定的期限是多久"
+    ],
+    "rewrite_type": "direct",
+    "complexity": "simple",
+    "law_hints": [
+      "工伤保险条例"
+    ]
+  },
+  "q47": {
+    "sub_queries": [
+      "用人单位未按规定提出工伤认定申请，工伤职工本人申请工伤认定的期限是多久"
+    ],
+    "rewrite_type": "direct",
+    "complexity": "simple",
+    "law_hints": [
+      "工伤保险条例"
+    ]
+  },
+  "q48": {
+    "sub_queries": [
+      "哪些情形可以视同工伤"
+    ],
+    "rewrite_type": "direct",
+    "complexity": "simple",
+    "law_hints": [
+      "工伤保险条例"
+    ]
+  },
+  "q49": {
+    "sub_queries": [
+      "上下班途中发生哪些事故可以认定为工伤"
+    ],
+    "rewrite_type": "direct",
+    "complexity": "simple",
+    "law_hints": [
+      "工伤保险条例"
+    ]
+  },
+  "q50": {
+    "sub_queries": [
+      "哪些情形不得认定为工伤或者视同工伤"
+    ],
+    "rewrite_type": "direct",
+    "complexity": "simple",
+    "law_hints": [
+      "工伤保险条例"
+    ]
+  },
+  "q51": {
+    "sub_queries": [
+      "工伤职工生活护理费支付标准"
+    ],
+    "rewrite_type": "direct",
+    "complexity": "simple",
+    "law_hints": [
+      "工伤保险条例"
+    ]
+  },
+  "q52": {
+    "sub_queries": [
+      "十级伤残一次性伤残补助金为几个月本人工资"
+    ],
+    "rewrite_type": "direct",
+    "complexity": "simple",
+    "law_hints": [
+      "工伤保险条例"
+    ]
+  },
+  "q53": {
+    "sub_queries": [
+      "用人单位未依法缴纳工伤保险费，职工发生工伤后工伤保险待遇由谁支付",
+      "未参保工伤职工能否要求用人单位按工伤保险待遇项目和标准支付费用"
+    ],
+    "rewrite_type": "decompose",
+    "complexity": "medium",
+    "law_hints": [
+      "工伤保险条例",
+      "中华人民共和国劳动合同法"
+    ]
+  },
+  "q54": {
+    "sub_queries": [
+      "劳动仲裁申请时效期间是多久"
+    ],
+    "rewrite_type": "direct",
+    "complexity": "simple",
+    "law_hints": [
+      "中华人民共和国劳动争议调解仲裁法"
+    ]
+  },
+  "q55": {
+    "sub_queries": [
+      "劳动争议仲裁委员会收到仲裁申请后几日内决定是否受理"
+    ],
+    "rewrite_type": "direct",
+    "complexity": "simple",
+    "law_hints": [
+      "中华人民共和国劳动争议调解仲裁法"
+    ]
+  },
+  "q56": {
+    "sub_queries": [
+      "仲裁庭应当在多长时间内作出仲裁裁决"
+    ],
+    "rewrite_type": "direct",
+    "complexity": "simple",
+    "law_hints": [
+      "中华人民共和国劳动争议调解仲裁法"
+    ]
+  },
+  "q57": {
+    "sub_queries": [
+      "劳动争议仲裁终局裁决的适用范围"
+    ],
+    "rewrite_type": "direct",
+    "complexity": "simple",
+    "law_hints": [
+      "中华人民共和国劳动争议调解仲裁法"
+    ]
+  },
+  "q58": {
+    "sub_queries": [
+      "申请劳动仲裁是否需要缴纳仲裁费"
+    ],
+    "rewrite_type": "direct",
+    "complexity": "simple",
+    "law_hints": [
+      "中华人民共和国劳动争议调解仲裁法"
+    ]
+  },
+  "q59": {
+    "sub_queries": [
+      "劳动争议仲裁的管辖规定：应向哪个劳动争议仲裁委员会申请仲裁"
+    ],
+    "rewrite_type": "direct",
+    "complexity": "simple",
+    "law_hints": [
+      "中华人民共和国劳动争议调解仲裁法"
+    ]
+  },
+  "q60": {
+    "sub_queries": [
+      "劳动争议中与争议事项有关的证据由用人单位掌握管理的，由谁承担举证责任"
+    ],
+    "rewrite_type": "direct",
+    "complexity": "simple",
+    "law_hints": [
+      "中华人民共和国劳动争议调解仲裁法"
+    ]
+  },
+  "q61": {
+    "sub_queries": [
+      "未订立书面劳动合同二倍工资的起算时间"
+    ],
+    "rewrite_type": "direct",
+    "complexity": "simple",
+    "law_hints": [
+      "中华人民共和国劳动合同法",
+      "中华人民共和国劳动合同法实施条例"
+    ]
+  },
+  "q62": {
+    "sub_queries": [
+      "经济补偿的月工资计算口径如何确定"
+    ],
+    "rewrite_type": "direct",
+    "complexity": "simple",
+    "law_hints": [
+      "中华人民共和国劳动合同法",
+      "中华人民共和国劳动合同法实施条例"
+    ]
+  },
+  "q63": {
+    "sub_queries": [
+      "用人单位解除劳动合同时出具的解除劳动合同证明应当载明哪些内容"
+    ],
+    "rewrite_type": "direct",
+    "complexity": "simple",
+    "law_hints": [
+      "中华人民共和国劳动合同法",
+      "中华人民共和国劳动合同法实施条例"
+    ]
+  },
+  "q64": {
+    "sub_queries": [
+      "劳动者达到法定退休年龄劳动合同终止的规定"
+    ],
+    "rewrite_type": "direct",
+    "complexity": "simple",
+    "law_hints": [
+      "中华人民共和国劳动合同法",
+      "中华人民共和国劳动合同法实施条例"
+    ]
+  },
+  "q65": {
+    "sub_queries": [
+      "服务期违约金是否有上限 劳动合同法第二十二条"
+    ],
+    "rewrite_type": "direct",
+    "complexity": "simple",
+    "law_hints": [
+      "中华人民共和国劳动合同法"
+    ]
+  },
+  "q66": {
+    "sub_queries": [
+      "工伤职工再次发生工伤，伤残津贴如何计算"
+    ],
+    "rewrite_type": "direct",
+    "complexity": "medium",
+    "law_hints": [
+      "工伤保险条例"
+    ]
+  },
+  "q67": {
+    "sub_queries": [
+      "对设区的市级劳动能力鉴定结论不服，能否申请再次鉴定"
+    ],
+    "rewrite_type": "direct",
+    "complexity": "simple",
+    "law_hints": [
+      "工伤保险条例"
+    ]
+  },
+  "q68": {
+    "sub_queries": [
+      "工伤职工伤残情况发生变化后能否申请劳动能力复查鉴定",
+      "劳动能力复查鉴定的申请条件与时限"
+    ],
+    "rewrite_type": "direct",
+    "complexity": "simple",
+    "law_hints": [
+      "工伤保险条例"
+    ]
+  },
+  "q69": {
+    "sub_queries": [
+      "社会保险行政部门作出工伤认定决定的期限是多久"
+    ],
+    "rewrite_type": "direct",
+    "complexity": "simple",
+    "law_hints": [
+      "工伤保险条例"
+    ]
+  },
+  "q70": {
+    "sub_queries": [
+      "申请工伤认定需要提交哪些材料"
+    ],
+    "rewrite_type": "direct",
+    "complexity": "simple",
+    "law_hints": [
+      "工伤保险条例"
+    ]
+  },
+  "q71": {
+    "sub_queries": [
+      "入职4个月未签订书面劳动合同，二倍工资可以主张几个月"
+    ],
+    "rewrite_type": "direct",
+    "complexity": "simple",
+    "law_hints": [
+      "中华人民共和国劳动合同法",
+      "中华人民共和国劳动合同法实施条例"
+    ]
+  },
+  "q72": {
+    "sub_queries": [
+      "劳务派遣工被用工单位退回后，派遣单位能否直接解除劳动合同"
+    ],
+    "rewrite_type": "direct",
+    "complexity": "medium",
+    "law_hints": [
+      "中华人民共和国劳动合同法",
+      "中华人民共和国劳动合同法实施条例"
+    ]
+  },
+  "q73": {
+    "sub_queries": [
+      "用人单位未依法缴纳工伤保险费，职工发生工伤的医疗费用和工伤保险待遇由谁承担",
+      "工伤职工与用人单位就工伤待遇发生争议能否申请劳动仲裁"
+    ],
+    "rewrite_type": "decompose",
+    "complexity": "complex",
+    "law_hints": [
+      "工伤保险条例",
+      "中华人民共和国劳动合同法",
+      "中华人民共和国劳动争议调解仲裁法"
+    ]
+  },
+  "q74": {
+    "sub_queries": [
+      "用人单位未安排职工休年休假且未支付未休年休假工资报酬，职工如何维权",
+      "未休年休假工资报酬的支付标准与计算方式",
+      "未休年休假争议申请劳动仲裁的时效与程序"
+    ],
+    "rewrite_type": "decompose",
+    "complexity": "medium",
+    "law_hints": [
+      "职工带薪年休假条例",
+      "中华人民共和国劳动争议调解仲裁法",
+      "中华人民共和国劳动合同法"
+    ]
+  },
+  "q75": {
+    "sub_queries": [
+      "劳动关系存续期间拖欠劳动报酬的仲裁时效如何计算",
+      "拖欠工资两年劳动关系仍在是否超过仲裁时效"
+    ],
+    "rewrite_type": "direct",
+    "complexity": "medium",
+    "law_hints": [
+      "中华人民共和国劳动争议调解仲裁法",
+      "中华人民共和国劳动合同法"
+    ]
+  },
+  "q76": {
+    "sub_queries": [
+      "终局裁决劳动者不服能否向人民法院起诉"
+    ],
+    "rewrite_type": "direct",
+    "complexity": "simple",
+    "law_hints": [
+      "中华人民共和国劳动争议调解仲裁法"
+    ]
+  },
+  "q77": {
+    "sub_queries": [
+      "用人单位对劳动争议终局裁决不服能否向法院申请撤销",
+      "劳动争议终局裁决用人单位申请撤销的法定情形和期限"
+    ],
+    "rewrite_type": "decompose",
+    "complexity": "medium",
+    "law_hints": [
+      "中华人民共和国劳动争议调解仲裁法"
+    ]
+  },
+  "q78": {
+    "sub_queries": [
+      "违法解除劳动合同赔偿金与经济补偿能否同时主张",
+      "违法解除劳动合同赔偿金计算标准 劳动合同法第八十七条",
+      "解除劳动合同经济补偿适用情形 劳动合同法第四十六条"
+    ],
+    "rewrite_type": "decompose",
+    "complexity": "medium",
+    "law_hints": [
+      "中华人民共和国劳动合同法",
+      "中华人民共和国劳动合同法实施条例"
+    ]
+  },
+  "q79": {
+    "sub_queries": [
+      "经济补偿的月工资高于用人单位所在直辖市、设区的市级人民政府公布的本地区上年度职工月平均工资三倍时，经济补偿的封顶标准和计算方式"
+    ],
+    "rewrite_type": "direct",
+    "complexity": "medium",
+    "law_hints": [
+      "中华人民共和国劳动合同法",
+      "中华人民共和国劳动合同法实施条例"
+    ]
+  },
+  "q80": {
+    "sub_queries": [
+      "试用期工资低于当地最低工资标准是否合法"
+    ],
+    "rewrite_type": "direct",
+    "complexity": "simple",
+    "law_hints": [
+      "中华人民共和国劳动合同法"
+    ]
+  },
+  "q81": {
+    "sub_queries": [
+      "连续工作满十年，用人单位是否必须订立无固定期限劳动合同"
+    ],
+    "rewrite_type": "direct",
+    "complexity": "simple",
+    "law_hints": [
+      "中华人民共和国劳动合同法",
+      "中华人民共和国劳动合同法实施条例"
+    ]
+  },
+  "q82": {
+    "sub_queries": [
+      "公益性岗位是否适用无固定期限劳动合同规定",
+      "公益性岗位解除或终止时能否主张经济补偿"
+    ],
+    "rewrite_type": "decompose",
+    "complexity": "medium",
+    "law_hints": [
+      "中华人民共和国劳动合同法",
+      "中华人民共和国劳动合同法实施条例"
+    ]
+  },
+  "q83": {
+    "sub_queries": [
+      "工伤职工停工留薪期内原工资福利待遇如何发放",
+      "工伤职工评残后生活不能自理的生活护理费由谁承担"
+    ],
+    "rewrite_type": "decompose",
+    "complexity": "medium",
+    "law_hints": [
+      "工伤保险条例",
+      "中华人民共和国劳动合同法"
+    ]
+  },
+  "q84": {
+    "sub_queries": [
+      "七级伤残职工劳动合同到期单位不续签，可主张哪些工伤保险待遇",
+      "七级伤残一次性工伤医疗补助金和一次性伤残就业补助金标准",
+      "劳动合同到期终止单位不续签是否需支付经济补偿金"
+    ],
+    "rewrite_type": "decompose",
+    "complexity": "complex",
+    "law_hints": [
+      "工伤保险条例",
+      "中华人民共和国劳动合同法"
+    ]
+  },
+  "q85": {
+    "sub_queries": [
+      "用人单位未依法缴纳工伤保险费，职工因工死亡，近亲属可领取的工伤保险待遇项目及标准",
+      "未参保单位职工工亡，工伤保险待遇由用人单位支付还是工伤保险基金支付"
+    ],
+    "rewrite_type": "decompose",
+    "complexity": "complex",
+    "law_hints": [
+      "工伤保险条例",
+      "中华人民共和国劳动合同法"
+    ]
+  },
+  "q86": {
+    "sub_queries": [
+      "工伤认定中用人单位不承认工伤的举证责任由谁承担"
+    ],
+    "rewrite_type": "direct",
+    "complexity": "simple",
+    "law_hints": [
+      "工伤保险条例",
+      "中华人民共和国劳动争议调解仲裁法"
+    ]
+  },
+  "q87": {
+    "sub_queries": [
+      "劳动争议调解协议达成后用人单位不履行，劳动者可以申请仲裁或向法院申请支付令吗"
+    ],
+    "rewrite_type": "direct",
+    "complexity": "medium",
+    "law_hints": [
+      "中华人民共和国劳动争议调解仲裁法",
+      "中华人民共和国劳动合同法"
+    ]
+  },
+  "q88": {
+    "sub_queries": [
+      "调解不成是否可以申请劳动仲裁"
+    ],
+    "rewrite_type": "direct",
+    "complexity": "simple",
+    "law_hints": [
+      "中华人民共和国劳动争议调解仲裁法"
+    ]
+  },
+  "q89": {
+    "sub_queries": [
+      "用人单位拖欠劳动报酬，劳动者能否直接向人民法院申请支付令"
+    ],
+    "rewrite_type": "direct",
+    "complexity": "simple",
+    "law_hints": [
+      "中华人民共和国劳动合同法",
+      "中华人民共和国劳动争议调解仲裁法"
+    ]
+  },
+  "q90": {
+    "sub_queries": [
+      "服务期协议中培训费用包括哪些项目",
+      "服务期违约金的分摊计算方式"
+    ],
+    "rewrite_type": "decompose",
+    "complexity": "medium",
+    "law_hints": [
+      "中华人民共和国劳动合同法",
+      "中华人民共和国劳动合同法实施条例"
+    ]
+  },
+  "q91": {
+    "sub_queries": [
+      "竞业限制协议未约定经济补偿，劳动者离职后是否仍需履行竞业限制义务"
+    ],
+    "rewrite_type": "direct",
+    "complexity": "medium",
+    "law_hints": [
+      "中华人民共和国劳动合同法",
+      "中华人民共和国劳动合同法实施条例"
+    ]
+  },
+  "q92": {
+    "sub_queries": [
+      "劳务派遣争议中派遣单位与用工单位作为共同被告的法律依据"
+    ],
+    "rewrite_type": "direct",
+    "complexity": "medium",
+    "law_hints": [
+      "中华人民共和国劳动合同法",
+      "中华人民共和国劳动争议调解仲裁法"
+    ]
+  },
+  "q93": {
+    "sub_queries": [
+      "一裁终局裁决对劳动者的救济路径：不服终局裁决可以向人民法院起诉",
+      "一裁终局裁决对用人单位的救济路径：可以申请撤销终局裁决的情形和期限"
+    ],
+    "rewrite_type": "decompose",
+    "complexity": "medium",
+    "law_hints": [
+      "中华人民共和国劳动争议调解仲裁法"
+    ]
+  },
+  "q94": {
+    "sub_queries": [
+      "十级伤残 一次性伤残补助金 计算标准 月工资9000元"
+    ],
+    "rewrite_type": "direct",
+    "complexity": "medium",
+    "law_hints": [
+      "工伤保险条例"
+    ]
+  },
+  "q95": {
+    "sub_queries": [
+      "职工因工死亡一次性工亡补助金标准为上一年度全国城镇居民人均可支配收入的20倍"
+    ],
+    "rewrite_type": "direct",
+    "complexity": "medium",
+    "law_hints": [
+      "工伤保险条例"
+    ]
+  },
+  "q96": {
+    "sub_queries": [
+      "工伤停工留薪期工资发放标准 原工资福利待遇不变"
+    ],
+    "rewrite_type": "direct",
+    "complexity": "medium",
+    "law_hints": [
+      "工伤保险条例",
+      "中华人民共和国劳动合同法"
+    ]
+  },
+  "q97": {
+    "sub_queries": [
+      "用人单位未缴纳工伤保险，职工十级伤残，单位应承担哪些工伤保险待遇项目",
+      "十级伤残的工伤保险待遇标准：一次性伤残补助金、一次性工伤医疗补助金、一次性伤残就业补助金",
+      "未参保单位工伤赔偿责任：工伤保险条例第六十二条"
+    ],
+    "rewrite_type": "decompose",
+    "complexity": "complex",
+    "law_hints": [
+      "工伤保险条例",
+      "中华人民共和国劳动合同法"
+    ]
+  },
+  "q98": {
+    "sub_queries": [
+      "拖欠工资的仲裁时效如何计算，劳动关系终止后起算点",
+      "劳动关系终止后拖欠工资申请劳动仲裁的时效期间"
+    ],
+    "rewrite_type": "direct",
+    "complexity": "medium",
+    "law_hints": [
+      "中华人民共和国劳动争议调解仲裁法",
+      "中华人民共和国劳动合同法"
+    ]
+  },
+  "q99": {
+    "sub_queries": [
+      "劳动争议仲裁终局裁决的适用条件：追索劳动报酬等不超过当地月最低工资标准十二个月金额的争议"
+    ],
+    "rewrite_type": "direct",
+    "complexity": "medium",
+    "law_hints": [
+      "中华人民共和国劳动争议调解仲裁法"
+    ]
+  },
+  "q100": {
+    "sub_queries": [
+      "违法解除劳动合同赔偿金计算：工作年限4年2个月、月薪3万元、当地社平工资8000元"
+    ],
+    "rewrite_type": "direct",
+    "complexity": "complex",
+    "law_hints": [
+      "中华人民共和国劳动合同法",
+      "中华人民共和国劳动合同法实施条例"
+    ]
+  },
+  "q101": {
+    "sub_queries": [
+      "入职11个月未签订书面劳动合同，补签后二倍工资可主张几个月"
+    ],
+    "rewrite_type": "direct",
+    "complexity": "medium",
+    "law_hints": [
+      "中华人民共和国劳动合同法",
+      "中华人民共和国劳动合同法实施条例"
+    ]
+  },
+  "q102": {
+    "sub_queries": [
+      "职工累计工作满5年应享受多少天带薪年休假",
+      "用人单位未安排年休假应支付未休年休假工资报酬的计算标准",
+      "未休年休假天数按当年度已过日历天数折算的方法"
+    ],
+    "rewrite_type": "decompose",
+    "complexity": "complex",
+    "law_hints": [
+      "职工带薪年休假条例",
+      "中华人民共和国劳动合同法"
+    ]
+  },
+  "q103": {
+    "sub_queries": [
+      "职工因醉酒导致工伤认定被拒，能否通过行政复议或诉讼争取认定工伤",
+      "工伤保险条例中醉酒排除工伤认定的适用条件"
+    ],
+    "rewrite_type": "direct",
+    "complexity": "medium",
+    "law_hints": [
+      "工伤保险条例",
+      "中华人民共和国劳动争议调解仲裁法"
+    ]
+  },
+  "q104": {
+    "sub_queries": [
+      "用人单位拒不协助工伤事故调查的法律后果"
+    ],
+    "rewrite_type": "direct",
+    "complexity": "simple",
+    "law_hints": [
+      "工伤保险条例",
+      "中华人民共和国劳动合同法"
+    ]
+  },
+  "q105": {
+    "sub_queries": [
+      "对市级劳动能力鉴定结论不服申请省级再次鉴定后，能否再次申请重新鉴定或复查鉴定"
+    ],
+    "rewrite_type": "direct",
+    "complexity": "medium",
+    "law_hints": [
+      "工伤保险条例",
+      "中华人民共和国劳动争议调解仲裁法"
+    ]
+  },
+  "q106": {
+    "sub_queries": [
+      "工作3年7个月和3年5个月的经济补偿分别计算几个月工资"
+    ],
+    "rewrite_type": "direct",
+    "complexity": "medium",
+    "law_hints": [
+      "中华人民共和国劳动合同法",
+      "中华人民共和国劳动合同法实施条例"
+    ]
+  },
+  "q107": {
+    "sub_queries": [
+      "试用期员工工伤认定与工伤保险待遇由谁承担",
+      "用人单位未缴纳社保期间职工发生工伤的赔偿责任主体"
+    ],
+    "rewrite_type": "decompose",
+    "complexity": "medium",
+    "law_hints": [
+      "工伤保险条例",
+      "中华人民共和国劳动合同法"
+    ]
+  },
+  "q108": {
+    "sub_queries": [
+      "用人单位申请撤销劳动争议终局裁决的法定理由",
+      "用人单位申请撤销终局裁决的期限",
+      "劳动争议终局裁决撤销申请 法条依据"
+    ],
+    "rewrite_type": "decompose",
+    "complexity": "medium",
+    "law_hints": [
+      "中华人民共和国劳动争议调解仲裁法"
+    ]
+  },
+  "q109": {
+    "sub_queries": [
+      "年休假是否可以跨年度安排 跨年度安排的条件",
+      "用人单位不安排职工休年休假的法律后果 未休年休假工资报酬"
+    ],
+    "rewrite_type": "decompose",
+    "complexity": "medium",
+    "law_hints": [
+      "职工带薪年休假条例",
+      "中华人民共和国劳动合同法"
+    ]
+  },
+  "q110": {
+    "sub_queries": [
+      "用人单位拖欠工资，劳动者解除劳动合同能否主张经济补偿",
+      "未休年假折算工资报酬的计算标准",
+      "劳动者以拖欠工资为由解除劳动合同的法定依据"
+    ],
+    "rewrite_type": "decompose",
+    "complexity": "complex",
+    "law_hints": [
+      "中华人民共和国劳动合同法",
+      "职工带薪年休假条例",
+      "中华人民共和国劳动法"
+    ]
+  },
+  "q111": {
+    "sub_queries": [
+      "对交通事故责任认定不服如何申请复核",
+      "交通事故认定书复核申请程序与期限"
+    ],
+    "rewrite_type": "direct",
+    "complexity": "simple",
+    "law_hints": [
+      "中华人民共和国劳动合同法",
+      "中华人民共和国劳动法",
+      "中华人民共和国民法典"
+    ]
+  },
+  "q112": {
+    "sub_queries": [
+      "商标侵权赔偿数额的确定标准与计算方式"
+    ],
+    "rewrite_type": "direct",
+    "complexity": "medium",
+    "law_hints": [
+      "中华人民共和国劳动合同法",
+      "中华人民共和国劳动法",
+      "中华人民共和国民法典"
+    ]
+  },
+  "q113": {
+    "sub_queries": [
+      "醉酒驾驶机动车 危险驾驶罪 量刑标准"
+    ],
+    "rewrite_type": "direct",
+    "complexity": "simple",
+    "law_hints": [
+      "中华人民共和国劳动合同法",
+      "中华人民共和国劳动法",
+      "中华人民共和国民法典"
+    ]
+  },
+  "q114": {
+    "sub_queries": [
+      "上市公司内幕交易的法律责任 行政责任 刑事责任 民事赔偿"
+    ],
+    "rewrite_type": "direct",
+    "complexity": "medium",
+    "law_hints": [
+      "中华人民共和国劳动合同法",
+      "中华人民共和国劳动法",
+      "中华人民共和国民法典"
+    ]
+  },
+  "q115": {
+    "sub_queries": [
+      "房屋征收拆迁的补偿标准是什么"
+    ],
+    "rewrite_type": "direct",
+    "complexity": "medium",
+    "law_hints": [
+      "中华人民共和国民法典"
+    ]
+  },
+  "q116": {
+    "sub_queries": [
+      "医疗事故鉴定的申请主体、受理机构及鉴定程序"
+    ],
+    "rewrite_type": "direct",
+    "complexity": "medium",
+    "law_hints": [
+      "中华人民共和国民法典"
+    ]
+  },
+  "q117": {
+    "sub_queries": [
+      "中国是否已开征遗产税 现行法律规定"
+    ],
+    "rewrite_type": "direct",
+    "complexity": "simple",
+    "law_hints": [
+      "中华人民共和国民法典"
+    ]
+  },
+  "q118": {
+    "sub_queries": [
+      "涉外离婚案件由哪个法院管辖"
+    ],
+    "rewrite_type": "direct",
+    "complexity": "simple",
+    "law_hints": [
+      "中华人民共和国民法典"
+    ]
+  },
+  "q119": {
+    "sub_queries": [
+      "网络诈骗报案流程及管辖机关"
+    ],
+    "rewrite_type": "direct",
+    "complexity": "simple",
+    "law_hints": [
+      "中华人民共和国劳动合同法",
+      "中华人民共和国劳动法",
+      "中华人民共和国民法典"
+    ]
+  },
+  "q120": {
+    "sub_queries": [
+      "个人所得税专项附加扣除包括哪些项目"
+    ],
+    "rewrite_type": "direct",
+    "complexity": "simple",
+    "law_hints": [
+      "中华人民共和国劳动合同法",
+      "中华人民共和国劳动法",
+      "中华人民共和国民法典"
+    ]
+  }
+}
