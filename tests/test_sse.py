@@ -319,6 +319,56 @@ class TestCitationCheck:
         assert stored["answer"] == "依据《劳动合同法》第三十九条。"
 
 
+class TestPartialCacheWrite:
+    """客户端断流（GeneratorExit）时不得把半截回答写进答案缓存。"""
+
+    @staticmethod
+    def _spy_cache(stored: list):
+        class SpyCache:
+            def lookup(self, *a, **kw):
+                return None
+
+            def store(self, *a, **kw):
+                stored.append({"args": a, "kwargs": kw})
+
+        return SpyCache()
+
+    def test_disconnect_after_first_delta_does_not_cache(self, monkeypatch):
+        stored: list = []
+        plan = make_plan("pure_vector")
+        monkeypatch.setattr(stream_mod, "analyze_query", lambda *a, **kw: plan)
+        engine = AnswerEngine(
+            llm_client=FakeLLMStream(
+                chunks=[StreamChunk(text="结论：六个月。"), StreamChunk(text="依据：第十九条")]
+            ),
+            retrieve_fn=fake_retrieve_fn([make_hit("c1", 0.5, rerank=1.0)]),
+            persist_fn=fake_persist(),
+            answer_cache=self._spy_cache(stored),
+        )
+        gen = engine.stream(plan.query, session_id="s1")
+        for frame in gen:
+            if frame.startswith("event: delta"):
+                break
+        gen.close()  # 模拟客户端在首个 delta 后断开
+        assert stored == [], f"断流后写入了缓存：{stored}"
+
+    def test_completed_answer_is_cached(self, monkeypatch):
+        stored: list = []
+        plan = make_plan("pure_vector")
+        monkeypatch.setattr(stream_mod, "analyze_query", lambda *a, **kw: plan)
+        engine = AnswerEngine(
+            llm_client=FakeLLMStream(
+                chunks=[StreamChunk(text="结论：六个月。"), StreamChunk(text="依据：第十九条")]
+            ),
+            retrieve_fn=fake_retrieve_fn([make_hit("c1", 0.5, rerank=1.0)]),
+            persist_fn=fake_persist(),
+            answer_cache=self._spy_cache(stored),
+        )
+        list(engine.stream(plan.query, session_id="s1"))
+        assert len(stored) == 1
+        assert stored[0]["kwargs"]["answer"] == "结论：六个月。依据：第十九条"
+
+
 # ---------------------------------------------------------------------------
 # 结构化回放
 # ---------------------------------------------------------------------------

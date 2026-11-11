@@ -81,6 +81,8 @@ class StreamResult:
     citation_check_ms: int = 0
     #: 降级原因（如 ``llm_fallback:<model>``）；正常为 None
     degraded: str | None = None
+    #: 生成是否真正跑完（含引用校验）；客户端断流时保持 False，禁止写缓存
+    completed: bool = False
     #: 输出护栏命中的敏感信息类别（如 api_key/internal_path/system_prompt）
     guardrail_hits: list[str] = field(default_factory=list)
 
@@ -386,6 +388,9 @@ class AnswerEngine:
             # ---- 流式生成（第 2/3 层容错）----
             generate_started = time.perf_counter()
             yield from self._generate(messages, result, gen_cfg, started)
+            # 只有生成器正常耗尽（含引用校验）才算完成；客户端 close() 会跳过
+            # 这一行，result.error 仍为 None，必须靠该标记拦住半截回答写缓存。
+            result.completed = True
             trace.record(
                 "generate",
                 latency_ms=int((time.perf_counter() - generate_started) * 1000),
@@ -718,9 +723,9 @@ class AnswerEngine:
         """把本次成功生成的回答写入答案缓存。
 
         写入条件很严：缓存直出等于跳过 LLM，一条错答案会被固化整个 TTL。
-        断流 / 报错 / 无来源 / 缓存回放自身 / 固定话术分支一律不写。
+        断流 / 报错 / 未完成 / 无来源 / 缓存回放自身 / 固定话术分支一律不写。
         """
-        if result.cached or plan is None or result.error:
+        if result.cached or plan is None or result.error or not result.completed:
             return
         if plan.route.route not in self._ANSWER_CACHE_ROUTES:
             return
