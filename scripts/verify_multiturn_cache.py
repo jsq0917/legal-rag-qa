@@ -15,10 +15,14 @@
 
 四个场景
 --------
-A 多轮：高温津贴问题 → 「那如果是我主动辞职呢？」（写入答案缓存）
+A 多轮：高温津贴问题 → 「那主动辞职有没有经济补偿？」（写入答案缓存）
 B 新会话：同一句追问，无历史（是否命中 A 写下的答案）
-C 不同上下文：年假问题 → 同一句追问（改写若丢掉上下文就会命中 A 的补偿答案）
+C 不同上下文：年假问题 → 同一句追问（改写若丢掉上下文就会命中 A 的答案）
 D 阳性对照：同一会话内原样重复同一问题（必须命中，证明探针能观测到命中）
+
+追问必须真的产生缓存键，否则 B/C 的「未命中」只是空跑：``verdict.ok`` 里
+``a_followup_cacheable`` 是硬性条件。因此这里的追问选的是单点问句，
+意图层稳定改写为 1 条子查询（多子查询 + 历史时按设计不读写答案缓存）。
 
 用法::
 
@@ -50,7 +54,7 @@ PROBE_CORPUS_VERSION = 20261111
 PROBE_INDEX_VERSION = 20261111
 PROBE_USER_ID = 990001
 
-FOLLOW_UP = "那如果是我主动辞职呢？"
+FOLLOW_UP = "那主动辞职有没有经济补偿？"
 SCENARIOS = (
     {
         "id": "A_multi_turn",
@@ -218,9 +222,13 @@ def run_probe(*, kb_id: str) -> dict:
         "other_context_same_cache_query": same_rewrite_c,
         "other_context_false_hit": false_hit_c,
         "other_context_lost": context_lost_c,
-        "ok": positive_control and not (false_hit_b or false_hit_c or context_lost_c),
+        # 追问必须真的产生可缓存键：否则场景 B/C 的"没有误命中"只是空跑
+        "ok": bool(a_follow["cache_query"])
+        and positive_control
+        and not (false_hit_b or false_hit_c or context_lost_c),
         "notes": [
-            "cache_query 为空表示该轮被拆成多个子查询且有历史，按设计不读不写答案缓存",
+            "a_followup_cacheable 为 false 表示追问被拆成多子查询且有历史、不生成缓存键，"
+            "此时 B/C 的「未命中」不构成证据，探针判定为不通过",
             "same_cache_query 为 null 表示至少一方没有缓存键，命中与否无从比较",
         ],
     }
@@ -255,6 +263,7 @@ def main(argv: list[str] | None = None) -> int:
 
     v = report["verdict"]
     print(f"positive_control_hit={v['positive_control_hit']}")
+    print(f"a_followup_cacheable={v['a_followup_cacheable']} key={v['a_followup_cache_key']!r}")
     print(f"new_session_hit={v['new_session_hit']} same_cache_query={v['new_session_same_cache_query']}")
     print(f"other_context_hit={v['other_context_hit']} same_cache_query={v['other_context_same_cache_query']}")
     print(f"other_context_lost={v['other_context_lost']} ok={v['ok']}")
